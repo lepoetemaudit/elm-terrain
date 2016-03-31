@@ -4,7 +4,7 @@ default: build output/elm.js output/terrain.html
 	cp -r src/texture build
 	@echo "\n*** Run 'make serve' and visit http://localhost:4079/terrain.html in your browser ***"
 
-dev: 
+watch: 
 	nodemon --exec "elm-make --warn --output src/elm.js" ./src/terrain.elm
 
 output/elm.js: src/Terrain.elm
