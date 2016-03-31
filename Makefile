@@ -16,6 +16,9 @@ output/terrain.html: src/terrain.html
 build:
 	mkdir build
 
+clean:
+	rm -r build
+
 serve: 
 	@cd build && python -m SimpleHTTPServer 4079
 

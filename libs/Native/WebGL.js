@@ -242,9 +242,8 @@ Elm.Native.WebGL.make = function(elm) {
 
     var gl = model.cache.gl;
 
-    gl.viewport(0, 0, model.w*2, model.h*2);
+    gl.viewport(0, 0, model.w, model.h);
 
-    //gl.viewport(0, 0, model.w, model.h);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.clearColor(0.8, 1.0, 1.0, 1.0);
     gl.enable(gl.CULL_FACE);
@@ -487,13 +486,8 @@ Elm.Native.WebGL.make = function(elm) {
       canvas.style.height = oldModel.h + 'px';
       canvas.style.display = "block";
       canvas.style.position = "absolute";
-      canvas.width = oldModel.w*2;
-      canvas.height = oldModel.h*2;
-
-      /*
       canvas.width = oldModel.w;
       canvas.height = oldModel.h;
-      */
 
       if (newModel.cache.gl) {
         drawGL(newModel);
