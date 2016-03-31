@@ -1,7 +1,11 @@
 # Elm Terrain
 A proof-of-concept terrain renderer using Elm WebGL
 
-# Running
+# Demo
+
+See http://lepoetemaudit.github.io/elm-terrain
+
+# Running locally
 
 Clone the repository and run `make` followed by `make serve`, then navigate to http://localhost:4079/terrain.html
 
