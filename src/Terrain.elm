@@ -81,10 +81,29 @@ walk directions person =
           rotation = (person.rotation + (rot / 50.0)) |> fixRot
       }
 
+dist x y =
+  sqrt (abs (x*x)) + (abs (y*y))
+
+getHeight hmap (x, z) =
+  Array.get (x + ((512 - z) * 512)) hmap
+  |> Maybe.withDefault 5.0
+
 getTerrainHeight : (Float, Float, Float) -> Array Float -> Float
 getTerrainHeight (x, _, z) hmap =
-  Array.get (round x + ((512 - (round z)) * 512)) hmap
-  |> Maybe.withDefault 5.0
+  let
+    (x1, z1) = (floor x, floor z)
+    (x2, z2) = (x1 + 1, z1 + 1)
+    gh = (getHeight hmap)
+    (h11, h21, h12, h22) = ( gh (x1, z1)
+                           , gh (x2, z1)
+                           , gh (x2, z2)
+                           , gh (x1, z2) )
+    in
+      (h11 * ((toFloat x2) - x) * ((toFloat z2) - z) +
+       h21 * (x - (toFloat x1)) * ((toFloat z2) - z) +
+       h12 * ((toFloat x2) - x) * (z - (toFloat z1)) +
+       h22 * (x - (toFloat x1)) * (z - (toFloat z1))
+      )
 
 jump : Bool -> Person -> Person
 jump isJumping person =
@@ -95,7 +114,7 @@ jump isJumping person =
       (vx,_,vz) = toTuple person.velocity
     in
       { person |
-          velocity = vec3 vx 2 vz
+          velocity = vec3 vx 5 vz
       }
 
 
@@ -236,7 +255,7 @@ textures = Signal.mailbox []
 port fetchTextures : Task WebGL.Error ()
 port fetchTextures =
   Task.sequence
-    [ loadTextureWithFilter Linear "texture/soil.jpg"
+    [ loadTextureWithFilter Linear "texture/tundra.jpg"
     , loadTextureWithFilter Linear "texture/grass.jpg"
     , loadTextureWithFilter Linear "texture/heightmap.png"
     ]
@@ -260,9 +279,7 @@ perspective : (Int,Int) -> Person -> Mat4
 perspective (w,h) person =
   let
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
-    --camera = vec3 (fmod x 1) y (fmod z 1)
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
-    --camera = vec3 0.0 y 0.0
   in
     (makePerspective 45 (toFloat w / toFloat h) 0.01 250)
     `mul` makeRotate person.rotation (vec3 0 1 0.0)
@@ -366,22 +383,20 @@ void main () {
   dist = outputPos.z;
 
   /* Calculate normal */
-  // read neightbor heights using an arbitrary small offset
   vec3 off = vec3(1.0 / 512.0, 1.0 / 512.0, 0.0);
   float hL = height(texelPos.xy - off.xz);
   float hR = height(texelPos.xy + off.xz);
   float hD = height(texelPos.xy - off.zy);
   float hU = height(texelPos.xy + off.zy);
 
-  vec3 N;
+  vec3 n;
 
-  // deduce terrain normal
-  N.x = hL - hR;
-  N.y = hD - hU;
-  N.z = 2.0;
-  N = normalize(N);
+  n.x = hL - hR;
+  n.y = hD - hU;
+  n.z = 2.0;
+  n = normalize(n);
 
-  normal = N;
+  normal = n;
 }
 
 |]
