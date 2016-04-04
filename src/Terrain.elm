@@ -73,8 +73,8 @@ walk directions person =
     rot = toFloat directions.x
     rotVal = person.rotation + (pi / 2.0)
     forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 3.5)
-    vz = -(sin(rotVal) * forward * 3.5)
+    vx = -(cos(rotVal) * forward * 5.0)
+    vz = -(sin(rotVal) * forward * 5.0)
     in
       { person |
           velocity = vec3 vx (getY person.velocity) vz,
@@ -256,8 +256,8 @@ textures = Signal.mailbox []
 port fetchTextures : Task WebGL.Error ()
 port fetchTextures =
   Task.sequence
-    [ loadTextureWithFilter Linear "texture/tundra.jpg"
-    , loadTextureWithFilter Linear "texture/grass.jpg"
+    [ loadTextureWithFilter Linear "texture/grass.jpg"
+    , loadTextureWithFilter Linear "texture/soil.jpg"
     , loadTextureWithFilter Linear "texture/heightmap.png"
     ]
     `Task.andThen` (\tex -> Signal.send textures.address tex)
@@ -350,7 +350,14 @@ sectorBlock : Drawable Vertex
 sectorBlock = Triangle (List.concatMap (makeTile sectorSize) [0..(sectorSize*sectorSize)-1])
 -- Shaders
 
-vertexShader : Shader { position:Vec3, coord:Vec3 } { u | perspective:Mat4, heightmap:Texture, texPos:Vec2, sectorPos: Vec2 } { vcoord:Vec2, blend: Float, dist: Float, normal: Vec3 }
+vertexShader : Shader { position:Vec3, coord:Vec3 }
+                      { u | perspective:Mat4
+                      , heightmap:Texture
+                      , texPos:Vec2
+                      , sectorPos: Vec2 }
+                      { vcoord:Vec2, dist: Float
+                      , normal: Vec3
+                      , hmapPos:Vec2 }
 vertexShader = [glsl|
 
 precision mediump float;
@@ -362,9 +369,9 @@ uniform mat4 perspective;
 uniform vec2 sectorPos;
 varying vec2 vcoord;
 uniform vec2 texPos;
-varying float blend;
 varying float dist;
 varying vec3 normal;
+varying vec2 hmapPos;
 uniform sampler2D heightmap;
 
 float height(vec2 pos) {
@@ -374,12 +381,11 @@ float height(vec2 pos) {
 
 void main () {
   vec2 texelPos = (position.xz + texPos) / 512.0;
+
   float vHeight = height(texelPos);
   vec2 pos = position.xz + sectorPos;
   vec4 outputPos = perspective * vec4(pos.x, vHeight, pos.y, 1.0);
   vcoord = coord.xy;
-  //blend = vHeight;
-  blend = vHeight / 8.0;
   gl_Position = outputPos;
   dist = outputPos.z;
 
@@ -398,27 +404,33 @@ void main () {
   n = normalize(n);
 
   normal = n;
+
+  hmapPos = texelPos;
 }
 
 |]
 
 
-fragmentShader : Shader {} { u | stone:Texture, soil:Texture} { vcoord:Vec2, blend: Float, dist: Float, normal: Vec3 }
+fragmentShader : Shader {} { u | stone:Texture, soil:Texture, heightmap:Texture} { vcoord:Vec2, hmapPos: Vec2, dist: Float, normal: Vec3 }
 fragmentShader = [glsl|
 
 precision mediump float;
 uniform sampler2D stone;
 uniform sampler2D soil;
+uniform sampler2D heightmap;
 varying vec2 vcoord;
 varying vec3 normal;
-varying float blend;
+varying vec2 hmapPos;
 varying float dist;
 
 void main () {
-  vec4 a = texture2D(stone, vcoord);
-  vec4 b = texture2D(soil, vcoord);
+  vec4 col = texture2D(heightmap, hmapPos);
+
+  vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
+  vec4 colVal = mix(base, texture2D(stone, vcoord), col.g);
+  colVal = mix(colVal, texture2D(soil, vcoord), col.b);
+
   // Get the base colour from the textures
-  vec4 colVal = mix(b, a, blend);
   // Apply the horizon blend
   vec4 horizon = vec4(0.8, 1.0, 1.0, 1.0);
 
