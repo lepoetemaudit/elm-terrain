@@ -39,7 +39,7 @@ eyeLevel = 1.6
 
 defaultPerson : Person
 defaultPerson =
-  { position = vec3 64.01 eyeLevel 64.01
+  { position = vec3 128.01 eyeLevel 48.00
   , velocity = vec3 0 0 0
   , rotation = pi
   }
@@ -73,8 +73,8 @@ walk directions person =
     rot = toFloat directions.x
     rotVal = person.rotation + (pi / 2.0)
     forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 5.0)
-    vz = -(sin(rotVal) * forward * 5.0)
+    vx = -(cos(rotVal) * forward * 3.5)
+    vz = -(sin(rotVal) * forward * 3.5)
     in
       { person |
           velocity = vec3 vx (getY person.velocity) vz,
@@ -96,9 +96,10 @@ getTerrainHeight (x, _, z) hmap =
     gh = (getHeight hmap)
     (h11, h21, h12, h22) = ( gh (x1, z1)
                            , gh (x2, z1)
-                           , gh (x2, z2)
-                           , gh (x1, z2) )
+                           , gh (x1, z2)
+                           , gh (x2, z2) )
     in
+
       (h11 * ((toFloat x2) - x) * ((toFloat z2) - z) +
        h21 * (x - (toFloat x1)) * ((toFloat z2) - z) +
        h12 * ((toFloat x2) - x) * (z - (toFloat z1)) +
