@@ -12,6 +12,8 @@ import Window
 import Array exposing (Array)
 import String
 
+import Skybox exposing (skyTextures)
+
 
 -- MODEL
 
@@ -236,11 +238,16 @@ getTexPos person =
 main : Signal Element
 main =
   let
+    persp = (Signal.map2 perspective Window.dimensions person)
+    skypersp = (Signal.map2 skyperspective Window.dimensions person)
     entities =
-      Signal.map3 world
-        textures.signal
-        (Signal.map2 perspective Window.dimensions person)
-        person
+      Signal.map2
+        (++)
+        (Signal.map2 Skybox.makeSkybox skypersp skyTextures.signal)
+        (Signal.map3 world
+          textures.signal
+          persp
+          person)
 
     terrain =
       Signal.map2 getTerrainHeight
@@ -262,6 +269,8 @@ port fetchTextures =
     ]
     `Task.andThen` (\tex -> Signal.send textures.address tex)
 
+port skyboxTextures : Task WebGL.Error()
+port skyboxTextures = Skybox.getTextures
 
 port terrainHeightMap : Signal (Array Float)
 
@@ -282,9 +291,16 @@ perspective (w,h) person =
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
-    (makePerspective 45 (toFloat w / toFloat h) 0.01 250)
+    (makePerspective 45 (toFloat w / toFloat h) 0.05 250)
     `mul` makeRotate person.rotation (vec3 0 1 0.0)
     `mul` makeTranslate camera
+
+skyperspective : (Int,Int) -> Person -> Mat4
+skyperspective (w,h) person =
+  (makePerspective 45 (toFloat w / toFloat h) 0.05 250)
+  --`mul` makeRotate (pi / 2.0) (vec3 1 0 0)
+  `mul` makeRotate person.rotation (vec3 0 1 0.0)
+
 
 
 view : (Int,Int) -> List Renderable -> Person -> Float -> Element
@@ -432,10 +448,14 @@ void main () {
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 horizon = vec4(0.8, 1.0, 1.0, 1.0);
+  vec4 horizon = vec4(0.4, 0.4, 0.5, 0.7);
 
-  vec4 darken = vec4(0.0, 0.0, 0.0, 1.0);
-  colVal = mix(colVal, darken, normal.x);
+  vec3 surfaceToLight = normalize(vec3(-0.3, 0.2, 0.6));
+
+  float lightValue = 0.1 + dot(normal, surfaceToLight);
+
+
+  colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
 
   if (dist > 160.0) {
     discard;
