@@ -25,32 +25,26 @@ getTextures =
       ]
       `Task.andThen` (\tex -> Signal.send skyTextures.address tex)
 
-zip = List.map2 (,)
+cube : List (Drawable Vertex)
+cube =
+  let
+    rft = vec3  1  1  1   -- right, front, top
+    lft = vec3 -1  1  1   -- left,  front, top
+    lbt = vec3 -1 -1  1
+    rbt = vec3  1 -1  1
+    rbb = vec3  1 -1 -1
+    rfb = vec3  1  1 -1
+    lfb = vec3 -1  1 -1
+    lbb = vec3 -1 -1 -1
 
-cube : List Texture -> List (Texture, (Drawable Vertex))
-cube textures =
-  if List.length textures < 6 then []
-  else
-    let
-      rft = vec3  1  1  1   -- right, front, top
-      lft = vec3 -1  1  1   -- left,  front, top
-      lbt = vec3 -1 -1  1
-      rbt = vec3  1 -1  1
-      rbb = vec3  1 -1 -1
-      rfb = vec3  1  1 -1
-      lfb = vec3 -1  1 -1
-      lbb = vec3 -1 -1 -1
-
-      tris = List.map Triangle
-        [ face rft rfb rbb rbt   -- right
-        , face rft rfb lfb lft   -- front (ignore)
-        , face lft rft rbt lbt   -- top (actual front)
-        , face rfb lfb lbb rbb   -- bottom
-        , face lfb lft lbt lbb   -- left (actual right)
-        , face rbt rbb lbb lbt   -- back
-        ]
-      in
-        zip textures tris
+  in List.map Triangle
+      [ face rft rfb rbb rbt   -- right
+      , face rft rfb lfb lft   -- front (ignore)
+      , face lft rft rbt lbt   -- top (actual front)
+      , face rfb lfb lbb rbb   -- bottom
+      , face lfb lft lbt lbb   -- left (actual right)
+      , face rbt rbb lbb lbt   -- back
+      ]
 
 
 face : Vec3 -> Vec3 -> Vec3 -> Vec3 -> List (Vertex, Vertex, Vertex)
@@ -69,17 +63,17 @@ type alias Vertex =
     , coord : Vec2
     }
 
--- TODO - this is creating a buffer every frame!!
+makeSkybox : Mat4 -> List Texture -> List Renderable
 makeSkybox perspective textures =
   List.map2
-    (\(tex, tris) ->
+    (\tex tris ->
       (renderWithConfig
               []
               vertexShader
               fragmentShader
               tris
               { facetex = tex, perspective = perspective } ) )
-    (cube textures)
+    textures cube
 
 
 
