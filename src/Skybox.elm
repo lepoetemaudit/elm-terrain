@@ -17,7 +17,7 @@ skyTextures = Signal.mailbox []
 getTextures =
   Task.sequence
       [ loadTextureWithFilter Linear "texture/miramar_lf.jpeg" -- left
-      , loadTextureWithFilter Linear "texture/miramar_dn.jpeg" -- ignore
+      , loadTextureWithFilter Linear "texture/miramar_up.jpeg" -- ignore
       , loadTextureWithFilter Linear "texture/miramar_ft.jpeg" -- front & good (flip?)
       , loadTextureWithFilter Linear "texture/miramar_bk.jpeg" -- back
       , loadTextureWithFilter Linear "texture/miramar_rt.jpeg" -- right & good (flip?)
@@ -39,7 +39,7 @@ cube =
 
   in List.map Triangle
       [ face rft rfb rbb rbt   -- right
-      , face rft rfb lfb lft   -- front (ignore)
+      , face rfb rft lft lfb   -- front (ignore)
       , face lft rft rbt lbt   -- top (actual front)
       , face rfb lfb lbb rbb   -- bottom
       , face lfb lft lbt lbb   -- left (actual right)
@@ -88,7 +88,7 @@ varying vec2 texcoord;
 uniform mat4 perspective;
 void main () {
     texcoord = vec2(coord.x, 1.0-coord.y);
-    gl_Position = perspective * vec4(position * 160.0, 1.0);
+    gl_Position = perspective * vec4(position * 145.0, 1.0);
 }
 |]
 
