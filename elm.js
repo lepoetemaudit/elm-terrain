@@ -10940,8 +10940,8 @@ Elm.Main.make = function (_elm) {
    $WebGL = Elm.WebGL.make(_elm),
    $Window = Elm.Window.make(_elm);
    var _op = {};
-   var fragmentShader = {"src": "\n\nprecision mediump float;\nuniform sampler2D stone;\nuniform sampler2D soil;\nvarying vec2 vcoord;\nvarying vec3 normal;\nvarying float blend;\nvarying float dist;\n\nvoid main () {\n  vec4 a = texture2D(stone, vcoord);\n  vec4 b = texture2D(soil, vcoord);\n  // Get the base colour from the textures\n  vec4 colVal = mix(b, a, blend);\n  // Apply the horizon blend\n  vec4 horizon = vec4(0.8, 1.0, 1.0, 1.0);\n\n  vec4 darken = vec4(0.0, 0.0, 0.0, 1.0);\n  colVal = mix(colVal, darken, normal.x);\n\n  if (dist > 160.0) {\n    discard;\n  } else if (dist > 128.0) {\n    gl_FragColor = mix(colVal, horizon, (dist - 128.0) / 32.0);\n  } else {\n    gl_FragColor = colVal;\n  }\n}\n\n"};
-   var vertexShader = {"src": "\n\nprecision mediump float;\n\nattribute vec3 position;\nattribute vec3 coord;\n\nuniform mat4 perspective;\nuniform vec2 sectorPos;\nvarying vec2 vcoord;\nuniform vec2 texPos;\nvarying float blend;\nvarying float dist;\nvarying vec3 normal;\nuniform sampler2D heightmap;\n\nfloat height(vec2 pos) {\n    vec4 texel = texture2DLod(heightmap, pos, 0.0);\n    return texel.x * 16.0;\n}\n\nvoid main () {\n  vec2 texelPos = (position.xz + texPos) / 512.0;\n  float vHeight = height(texelPos);\n  vec2 pos = position.xz + sectorPos;\n  vec4 outputPos = perspective * vec4(pos.x, vHeight, pos.y, 1.0);\n  vcoord = coord.xy;\n  //blend = vHeight;\n  blend = vHeight / 8.0;\n  gl_Position = outputPos;\n  dist = outputPos.z;\n\n  /* Calculate normal */\n  // read neightbor heights using an arbitrary small offset\n  vec3 off = vec3(1.0 / 512.0, 1.0 / 512.0, 0.0);\n  float hL = height(texelPos.xy - off.xz);\n  float hR = height(texelPos.xy + off.xz);\n  float hD = height(texelPos.xy - off.zy);\n  float hU = height(texelPos.xy + off.zy);\n\n  vec3 N;\n\n  // deduce terrain normal\n  N.x = hL - hR;\n  N.y = hD - hU;\n  N.z = 2.0;\n  N = normalize(N);\n\n  normal = N;\n}\n\n"};
+   var fragmentShader = {"src": "\n\nprecision mediump float;\nuniform sampler2D stone;\nuniform sampler2D soil;\nuniform sampler2D heightmap;\nvarying vec2 vcoord;\nvarying vec3 normal;\nvarying vec2 hmapPos;\nvarying float dist;\n\nvoid main () {\n  vec4 col = texture2D(heightmap, hmapPos);\n\n  vec4 base = vec4(0.0, 0.0, 0.0, 1.0);\n  vec4 colVal = mix(base, texture2D(stone, vcoord), col.g);\n  colVal = mix(colVal, texture2D(soil, vcoord), col.b);\n\n  // Get the base colour from the textures\n  // Apply the horizon blend\n  vec4 horizon = vec4(0.8, 1.0, 1.0, 1.0);\n\n  vec4 darken = vec4(0.0, 0.0, 0.0, 1.0);\n  colVal = mix(colVal, darken, normal.x);\n\n  if (dist > 160.0) {\n    discard;\n  } else if (dist > 128.0) {\n    gl_FragColor = mix(colVal, horizon, (dist - 128.0) / 32.0);\n  } else {\n    gl_FragColor = colVal;\n  }\n}\n\n"};
+   var vertexShader = {"src": "\n\nprecision mediump float;\n\nattribute vec3 position;\nattribute vec3 coord;\n\nuniform mat4 perspective;\nuniform vec2 sectorPos;\nvarying vec2 vcoord;\nuniform vec2 texPos;\nvarying float dist;\nvarying vec3 normal;\nvarying vec2 hmapPos;\nuniform sampler2D heightmap;\n\nfloat height(vec2 pos) {\n    vec4 texel = texture2DLod(heightmap, pos, 0.0);\n    return texel.x * 16.0;\n}\n\nvoid main () {\n  vec2 texelPos = (position.xz + texPos) / 512.0;\n\n  float vHeight = height(texelPos);\n  vec2 pos = position.xz + sectorPos;\n  vec4 outputPos = perspective * vec4(pos.x, vHeight, pos.y, 1.0);\n  vcoord = coord.xy;\n  gl_Position = outputPos;\n  dist = outputPos.z;\n\n  /* Calculate normal */\n  vec3 off = vec3(1.0 / 512.0, 1.0 / 512.0, 0.0);\n  float hL = height(texelPos.xy - off.xz);\n  float hR = height(texelPos.xy + off.xz);\n  float hD = height(texelPos.xy - off.zy);\n  float hU = height(texelPos.xy + off.zy);\n\n  vec3 n;\n\n  n.x = hL - hR;\n  n.y = hD - hU;\n  n.z = 2.0;\n  n = normalize(n);\n\n  normal = n;\n\n  hmapPos = texelPos;\n}\n\n"};
    var Vertex = F2(function (a,b) {    return {position: a,coord: b};});
    var makeTile = F2(function (sectorSize,pos) {
       var y = $Basics.toFloat(pos / sectorSize | 0);
@@ -11009,8 +11009,8 @@ Elm.Main.make = function (_elm) {
    }();
    var textures = $Signal.mailbox(_U.list([]));
    var fetchTextures = Elm.Native.Task.make(_elm).perform(A2($Task.andThen,
-   $Task.sequence(_U.list([A2($WebGL.loadTextureWithFilter,$WebGL.Linear,"texture/soil.jpg")
-                          ,A2($WebGL.loadTextureWithFilter,$WebGL.Linear,"texture/grass.jpg")
+   $Task.sequence(_U.list([A2($WebGL.loadTextureWithFilter,$WebGL.Linear,"texture/grass.jpg")
+                          ,A2($WebGL.loadTextureWithFilter,$WebGL.Linear,"texture/soil.jpg")
                           ,A2($WebGL.loadTextureWithFilter,$WebGL.Linear,"texture/heightmap.png")])),
    function (tex) {
       return A2($Signal.send,textures.address,tex);
@@ -11027,10 +11027,30 @@ Elm.Main.make = function (_elm) {
       var v = $Math$Vector3.toRecord(person.velocity);
       return _U.update(person,{velocity: A3($Math$Vector3.vec3,v.x,v.y - 0.25 * dt,v.z)});
    });
-   var getTerrainHeight = F2(function (_p11,hmap) {
-      var _p12 = _p11;
-      return A2($Maybe.withDefault,5.0,A2($Array.get,$Basics.round(_p12._0) + (512 - $Basics.round(_p12._2)) * 512,hmap));
+   var getHeight = F2(function (hmap,_p11) {    var _p12 = _p11;return A2($Maybe.withDefault,5.0,A2($Array.get,_p12._0 + (512 - _p12._1) * 512,hmap));});
+   var getTerrainHeight = F2(function (_p13,hmap) {
+      var _p14 = _p13;
+      var _p19 = _p14._2;
+      var _p18 = _p14._0;
+      var gh = getHeight(hmap);
+      var _p15 = {ctor: "_Tuple2",_0: $Basics.floor(_p18),_1: $Basics.floor(_p19)};
+      var x1 = _p15._0;
+      var z1 = _p15._1;
+      var _p16 = {ctor: "_Tuple2",_0: x1 + 1,_1: z1 + 1};
+      var x2 = _p16._0;
+      var z2 = _p16._1;
+      var _p17 = {ctor: "_Tuple4"
+                 ,_0: gh({ctor: "_Tuple2",_0: x1,_1: z1})
+                 ,_1: gh({ctor: "_Tuple2",_0: x2,_1: z1})
+                 ,_2: gh({ctor: "_Tuple2",_0: x1,_1: z2})
+                 ,_3: gh({ctor: "_Tuple2",_0: x2,_1: z2})};
+      var h11 = _p17._0;
+      var h21 = _p17._1;
+      var h12 = _p17._2;
+      var h22 = _p17._3;
+      return h11 * ($Basics.toFloat(x2) - _p18) * ($Basics.toFloat(z2) - _p19) + h21 * (_p18 - $Basics.toFloat(x1)) * ($Basics.toFloat(z2) - _p19) + h12 * ($Basics.toFloat(x2) - _p18) * (_p19 - $Basics.toFloat(z1)) + h22 * (_p18 - $Basics.toFloat(x1)) * (_p19 - $Basics.toFloat(z1));
    });
+   var dist = F2(function (x,y) {    return $Basics.sqrt($Basics.abs(x * x)) + $Basics.abs(y * y);});
    var fixRot = function (rot) {    return _U.cmp(rot,0) < 0 ? rot + $Basics.pi * 2.0 : _U.cmp(rot,$Basics.pi * 2.0) > 0 ? rot - $Basics.pi * 2.0 : rot;};
    var walk = F2(function (directions,person) {
       var forward = $Basics.toFloat(directions.y);
@@ -11042,13 +11062,13 @@ Elm.Main.make = function (_elm) {
       return _U.update(person,{velocity: A3($Math$Vector3.vec3,vx,$Math$Vector3.getY(person.velocity),vz),rotation: fixRot(person.rotation + rot / 50.0)});
    });
    var eyeLevel = 1.6;
-   var defaultPerson = {position: A3($Math$Vector3.vec3,64.01,eyeLevel,64.01),velocity: A3($Math$Vector3.vec3,0,0,0),rotation: $Basics.pi};
+   var defaultPerson = {position: A3($Math$Vector3.vec3,128.01,eyeLevel,48.0),velocity: A3($Math$Vector3.vec3,0,0,0),rotation: $Basics.pi};
    var jump = F2(function (isJumping,person) {
       if ($Basics.not(isJumping) || _U.cmp($Math$Vector3.getY(person.position),eyeLevel) > 0) return person; else {
-            var _p13 = $Math$Vector3.toTuple(person.velocity);
-            var vx = _p13._0;
-            var vz = _p13._2;
-            return _U.update(person,{velocity: A3($Math$Vector3.vec3,vx,2,vz)});
+            var _p20 = $Math$Vector3.toTuple(person.velocity);
+            var vx = _p20._0;
+            var vz = _p20._2;
+            return _U.update(person,{velocity: A3($Math$Vector3.vec3,vx,5,vz)});
          }
    });
    var physics = F3(function (dt,th,person) {
@@ -11057,10 +11077,10 @@ Elm.Main.make = function (_elm) {
       var ty = eyeLevel + A2(getTerrainHeight,$Math$Vector3.toTuple(position),th);
       return _U.update(person,{position: _U.cmp(p.y,ty) < 0 ? A3($Math$Vector3.vec3,p.x,ty,p.z) : position});
    });
-   var update = F2(function (_p14,person) {
-      var _p15 = _p14;
-      var _p16 = _p15._2;
-      return A3(physics,_p16,_p15._3,A2(gravity,_p16,A2(jump,_p15._0,A2(walk,_p15._1,person))));
+   var update = F2(function (_p21,person) {
+      var _p22 = _p21;
+      var _p23 = _p22._2;
+      return A3(physics,_p23,_p22._3,A2(gravity,_p23,A2(jump,_p22._0,A2(walk,_p22._1,person))));
    });
    var person = A3($Signal.foldp,update,defaultPerson,inputs);
    var fmod = F2(function (f,n) {    var integer = $Basics.floor(f);return $Basics.toFloat(A2($Basics._op["%"],integer,n)) + f - $Basics.toFloat(integer);});
@@ -11074,9 +11094,9 @@ Elm.Main.make = function (_elm) {
       var x = sX + $Basics.cos(cross) * sectorSize * $Basics.toFloat(colNum);
       var sZ = $Basics.sin(rot) * length;
       var z = sZ + $Basics.sin(cross) * sectorSize * $Basics.toFloat(colNum);
-      var _p17 = $Math$Vector3.toTuple(person.position);
-      var pX = _p17._0;
-      var pZ = _p17._2;
+      var _p24 = $Math$Vector3.toTuple(person.position);
+      var pX = _p24._0;
+      var pZ = _p24._2;
       var texturePos = A2(getSectorPos,x + pX,z + pZ);
       var userSector = A2(getSectorPos,pX,pZ);
       var sectorPos = {ctor: "_Tuple2",_0: $Basics.fst(texturePos) - $Basics.fst(userSector),_1: $Basics.snd(texturePos) - $Basics.snd(userSector)};
@@ -11090,40 +11110,40 @@ Elm.Main.make = function (_elm) {
    });
    var getSectors = function (person) {
       var rows = _U.range(0,7);
-      var _p18 = $Math$Vector3.toTuple(person.position);
-      var x = _p18._0;
-      var z = _p18._2;
-      var _p19 = {ctor: "_Tuple2",_0: x - A2(fmod,x,sectorSize),_1: z - A2(fmod,z,sectorSize)};
-      var sx = _p19._0;
-      var sy = _p19._1;
+      var _p25 = $Math$Vector3.toTuple(person.position);
+      var x = _p25._0;
+      var z = _p25._2;
+      var _p26 = {ctor: "_Tuple2",_0: x - A2(fmod,x,sectorSize),_1: z - A2(fmod,z,sectorSize)};
+      var sx = _p26._0;
+      var sy = _p26._1;
       return A2($List.concatMap,function (r) {    return A3(getSectorRow,r,person,$Basics.degrees(45.0));},rows);
    };
-   var perspective = F2(function (_p20,person) {
-      var _p21 = _p20;
-      var _p22 = $Math$Vector3.toTuple($Math$Vector3.negate(person.position));
-      var x = _p22._0;
-      var y = _p22._1;
-      var z = _p22._2;
+   var perspective = F2(function (_p27,person) {
+      var _p28 = _p27;
+      var _p29 = $Math$Vector3.toTuple($Math$Vector3.negate(person.position));
+      var x = _p29._0;
+      var y = _p29._1;
+      var z = _p29._2;
       var camera = A3($Math$Vector3.vec3,A2(fmod,x,sectorSize) - sectorSize,y,A2(fmod,z,sectorSize) - sectorSize);
       return A2($Math$Matrix4.mul,
       A2($Math$Matrix4.mul,
-      A4($Math$Matrix4.makePerspective,45,$Basics.toFloat(_p21._0) / $Basics.toFloat(_p21._1),1.0e-2,250),
+      A4($Math$Matrix4.makePerspective,45,$Basics.toFloat(_p28._0) / $Basics.toFloat(_p28._1),1.0e-2,250),
       A2($Math$Matrix4.makeRotate,person.rotation,A3($Math$Vector3.vec3,0,1,0.0))),
       $Math$Matrix4.makeTranslate(camera));
    });
    var sectorBlock = $WebGL.Triangle(A2($List.concatMap,makeTile(sectorSize),_U.range(0,sectorSize * sectorSize - 1)));
    var world = F3(function (textures,perspective,person) {
-      var _p23 = textures;
-      if (_p23.ctor === "::" && _p23._1.ctor === "::" && _p23._1._1.ctor === "::" && _p23._1._1._1.ctor === "[]") {
+      var _p30 = textures;
+      if (_p30.ctor === "::" && _p30._1.ctor === "::" && _p30._1._1.ctor === "::" && _p30._1._1._1.ctor === "[]") {
             return A2($List.map,
             function (sector) {
                return A4($WebGL.render,
                vertexShader,
                fragmentShader,
                sectorBlock,
-               {stone: _p23._0
-               ,soil: _p23._1._0
-               ,heightmap: _p23._1._1._0
+               {stone: _p30._0
+               ,soil: _p30._1._0
+               ,heightmap: _p30._1._1._0
                ,texPos: A2($Math$Vector2.vec2,$Basics.fst(sector.texturePos),$Basics.snd(sector.texturePos))
                ,sectorPos: A2($Math$Vector2.vec2,$Basics.fst(sector.position),$Basics.snd(sector.position))
                ,perspective: perspective});
@@ -11136,7 +11156,7 @@ Elm.Main.make = function (_elm) {
    var main = function () {
       var terrain = A3($Signal.map2,
       getTerrainHeight,
-      A2($Signal.map,function (_p24) {    return $Math$Vector3.toTuple(function (_) {    return _.position;}(_p24));},person),
+      A2($Signal.map,function (_p31) {    return $Math$Vector3.toTuple(function (_) {    return _.position;}(_p31));},person),
       terrainHeightMap);
       var entities = A4($Signal.map3,world,textures.signal,A3($Signal.map2,perspective,$Window.dimensions,person),person);
       return A5($Signal.map4,view,$Window.dimensions,entities,person,terrain);
@@ -11151,6 +11171,8 @@ Elm.Main.make = function (_elm) {
                              ,update: update
                              ,fixRot: fixRot
                              ,walk: walk
+                             ,dist: dist
+                             ,getHeight: getHeight
                              ,getTerrainHeight: getTerrainHeight
                              ,jump: jump
                              ,physics: physics
