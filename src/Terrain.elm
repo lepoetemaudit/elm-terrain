@@ -1,5 +1,6 @@
 import Graphics.Element exposing (..)
 import Keyboard
+import Mouse
 import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
@@ -12,6 +13,8 @@ import Window
 import Array exposing (Array)
 import String
 
+import Skybox exposing (skyTextures)
+
 
 -- MODEL
 
@@ -19,11 +22,12 @@ type alias Person =
     { position : Vec3
     , velocity : Vec3
     , rotation : Float
+    , lookVert : Float
     }
 
 
 type alias Inputs =
-    ( Bool, {x:Int, y:Int}, Float, Array Float )
+    ( Bool, {x:Int, y:Int}, Float, Array Float, (Int, (Int, Int)) )
 
 sectorSize : number
 sectorSize = 32
@@ -42,15 +46,20 @@ defaultPerson =
   { position = vec3 128.01 eyeLevel 48.00
   , velocity = vec3 0 0 0
   , rotation = pi
+  , lookVert = 0.0
   }
 
+
+mouseLook mouseY w h person =
+  { person | lookVert = -(pi/2.0) + ((toFloat mouseY) / (toFloat h)) * pi  }
 
 -- UPDATE
 
 update : Inputs -> Person -> Person
-update (isJumping, directions, dt, th) person =
+update (isJumping, directions, dt, th, (mouseY, (w, h))) person =
   person
     |> walk directions
+    |> mouseLook mouseY w h
     |> jump isJumping
     |> gravity dt
     |> physics dt th
@@ -73,17 +82,15 @@ walk directions person =
     rot = toFloat directions.x
     rotVal = person.rotation + (pi / 2.0)
     forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 5.0)
-    vz = -(sin(rotVal) * forward * 5.0)
+    vx = -(cos(rotVal) * forward * 4.0)
+    vz = -(sin(rotVal) * forward * 4.0)
     in
       { person |
           velocity = vec3 vx (getY person.velocity) vz,
-          rotation = (person.rotation + (rot / 50.0)) |> fixRot
+          rotation = (person.rotation + (rot / 40.0)) |> fixRot
       }
 
-dist x y =
-  sqrt (abs (x*x)) + (abs (y*y))
-
+getHeight : Array Float -> ( Int, Int ) -> Float
 getHeight hmap (x, z) =
   Array.get (x + ((512 - z) * 512)) hmap
   |> Maybe.withDefault 5.0
@@ -154,6 +161,7 @@ getSectorPos : Float -> Float -> ( Float, Float )
 getSectorPos x z =
   (x - (fmod x sectorSize), z - (fmod z sectorSize))
 
+makeSector : Int -> Person -> Float -> Int -> Maybe Sector
 makeSector rowNum person fov colNum =
   let
     (pX, _, pZ) = toTuple person.position
@@ -173,10 +181,15 @@ makeSector rowNum person fov colNum =
     userSector = getSectorPos pX pZ
     sectorPos = (fst texturePos - fst userSector, snd texturePos - snd userSector)
 
+    (tx, ty) = texturePos
+
   in
-    { texturePos = texturePos
-     , position = sectorPos
-    }
+    if tx >= -1.0 && ty >= -1.0 && tx <= 512 && ty <= 512 then
+      Just { texturePos = texturePos
+       , position = sectorPos
+      }
+    else
+      Nothing
 
 
 
@@ -185,10 +198,9 @@ getSectorRow rowNum person fov =
   let
       length = (toFloat rowNum) * sectorSize
       width = (cos fov) * length
-      cols = [-1..((width / sectorSize) * 2.0 |> round)+1]
+      cols = [-1..((width / sectorSize) * 2.1 |> round)+1]
   in
-      List.map (makeSector rowNum person fov) cols
-
+      List.filterMap (makeSector rowNum person fov) cols
 
 
 getSectors : Person -> List Sector
@@ -236,11 +248,16 @@ getTexPos person =
 main : Signal Element
 main =
   let
+    persp = (Signal.map2 perspective Window.dimensions person)
+    skypersp = (Signal.map2 skyperspective Window.dimensions person)
     entities =
-      Signal.map3 world
-        textures.signal
-        (Signal.map2 perspective Window.dimensions person)
-        person
+      Signal.map2
+        (++)
+        (Signal.map2 Skybox.makeSkybox skypersp skyTextures.signal)
+        (Signal.map3 world
+          textures.signal
+          persp
+          person)
 
     terrain =
       Signal.map2 getTerrainHeight
@@ -262,6 +279,8 @@ port fetchTextures =
     ]
     `Task.andThen` (\tex -> Signal.send textures.address tex)
 
+port skyboxTextures : Task WebGL.Error()
+port skyboxTextures = Skybox.getTextures
 
 port terrainHeightMap : Signal (Array Float)
 
@@ -270,7 +289,13 @@ inputs =
   let
     dt = Signal.map (\t -> t/500) (fps 60)
   in
-    Signal.map4 (,,,) Keyboard.space (Signal.merge Keyboard.wasd Keyboard.arrows) dt terrainHeightMap
+    Signal.map5
+      (,,,,)
+      Keyboard.space
+      (Signal.merge Keyboard.wasd Keyboard.arrows)
+      dt
+      terrainHeightMap
+      (Signal.map2 (,) Mouse.y Window.dimensions)
       |> Signal.sampleOn dt
 
 
@@ -282,9 +307,18 @@ perspective (w,h) person =
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
-    (makePerspective 45 (toFloat w / toFloat h) 0.01 250)
+    (makePerspective 45 (toFloat w / toFloat h) 0.10 255)
+    `mul` makeRotate person.lookVert (vec3 1 0 0.0)
     `mul` makeRotate person.rotation (vec3 0 1 0.0)
     `mul` makeTranslate camera
+
+skyperspective : (Int,Int) -> Person -> Mat4
+skyperspective (w,h) person =
+  (makePerspective 45 (toFloat w / toFloat h) 0.10 255)
+  --`mul` makeRotate (pi / 2.0) (vec3 1 0 0)
+  `mul` makeRotate person.lookVert (vec3 1 0 0.0)
+  `mul` makeRotate person.rotation (vec3 0 1 0.0)
+
 
 
 view : (Int,Int) -> List Renderable -> Person -> Float -> Element
@@ -432,10 +466,14 @@ void main () {
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 horizon = vec4(0.8, 1.0, 1.0, 1.0);
+  vec4 horizon = vec4(0.4, 0.4, 0.5, 0.7);
 
-  vec4 darken = vec4(0.0, 0.0, 0.0, 1.0);
-  colVal = mix(colVal, darken, normal.x);
+  vec3 surfaceToLight = normalize(vec3(-0.3, 0.2, 0.6));
+
+  float lightValue = 0.1 + dot(normal, surfaceToLight);
+
+
+  colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
 
   if (dist > 160.0) {
     discard;
