@@ -4,15 +4,14 @@ import Task
 import Signal
 
 import WebGL exposing (..)
-
-
 import Math.Vector2 exposing (Vec2, vec2)
 import Math.Vector3 exposing (vec3, Vec3)
-import Math.Vector3 exposing (..)
-import Math.Matrix4 exposing (..)
+import Math.Matrix4 as Mat4 exposing (Mat4, mul)
 
-skyTextures : Signal.Mailbox (List Texture)
-skyTextures = Signal.mailbox []
+import Types exposing (Person)
+
+textures : Signal.Mailbox (List Texture)
+textures = Signal.mailbox []
 
 getTextures =
   Task.sequence
@@ -23,7 +22,7 @@ getTextures =
       , loadTextureWithFilter Linear "texture/miramar_rt.jpeg" -- right & good (flip?)
       , loadTextureWithFilter Linear "texture/miramar_dn.jpeg" -- ignore
       ]
-      `Task.andThen` (\tex -> Signal.send skyTextures.address tex)
+      `Task.andThen` (\tex -> Signal.send textures.address tex)
 
 cube : List (Drawable Vertex)
 cube =
@@ -75,7 +74,14 @@ makeSkybox perspective textures =
               { facetex = tex, perspective = perspective } ) )
     textures cube
 
+-- TODO - this should return a model matrix, not a perspective one
+perspective : (Int,Int) -> Person -> Mat4
+perspective (w,h) person =
+  (Mat4.makePerspective 45 (toFloat w / toFloat h) 0.10 255)
+  `mul` Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
+  `mul` Mat4.makeRotate person.rotation (vec3 0 1 0.0)
 
+-- Shaders
 
 vertexShader : Shader { attr | position:Vec3, coord: Vec2 }
                       {u | facetex: Texture, perspective: Mat4} { texcoord: Vec2}

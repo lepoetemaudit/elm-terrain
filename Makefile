@@ -5,7 +5,7 @@ default: build output/elm.js output/terrain.html
 	@echo "\n*** Run 'make serve' and visit http://localhost:4079/terrain.html in your browser ***"
 
 watch: 
-	nodemon --exec "elm-make --warn --output build/elm.js" ./src/terrain.elm
+	nodemon --exec "elm-make --warn --output build/elm.js" ./src/Main.elm
 
 output/elm.js: src/Terrain.elm
 	elm-make src/Terrain.elm --output build/elm.js

@@ -1,33 +1,14 @@
-import Graphics.Element exposing (..)
-import Keyboard
-import Mouse
+module Terrain (..) where
+
 import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
-import Task exposing (Task)
-import Text
-import Time exposing (..)
 import WebGL exposing (..)
-import Window
 import Array exposing (Array)
-import String
 
-import Skybox exposing (skyTextures)
+import Types exposing (Person)
 
-
--- MODEL
-
-type alias Person =
-    { position : Vec3
-    , velocity : Vec3
-    , rotation : Float
-    , lookVert : Float
-    }
-
-
-type alias Inputs =
-    ( Bool, {x:Int, y:Int}, Float, Array Float, (Int, (Int, Int)) )
 
 sectorSize : number
 sectorSize = 32
@@ -37,58 +18,7 @@ fmod f n =
   let integer = floor f
   in  toFloat (integer % n) + f - toFloat integer
 
-eyeLevel : Float
-eyeLevel = 1.6
 
-
-defaultPerson : Person
-defaultPerson =
-  { position = vec3 128.01 eyeLevel 48.00
-  , velocity = vec3 0 0 0
-  , rotation = pi
-  , lookVert = 0.0
-  }
-
-
-mouseLook mouseY w h person =
-  { person | lookVert = -(pi/2.0) + ((toFloat mouseY) / (toFloat h)) * pi  }
-
--- UPDATE
-
-update : Inputs -> Person -> Person
-update (isJumping, directions, dt, th, (mouseY, (w, h))) person =
-  person
-    |> walk directions
-    |> mouseLook mouseY w h
-    |> jump isJumping
-    |> gravity dt
-    |> physics dt th
-
-
-
-fixRot : Float -> Float
-fixRot rot =
-  if rot < 0 then
-    rot + (pi * 2.0)
-  else if rot > (pi * 2.0) then
-    rot - (pi * 2.0)
-  else
-    rot
-
-walk : { x:Int, y:Int } -> Person -> Person
-walk directions person =
-  let
-    p = toRecord person.position
-    rot = toFloat directions.x
-    rotVal = person.rotation + (pi / 2.0)
-    forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 4.0)
-    vz = -(sin(rotVal) * forward * 4.0)
-    in
-      { person |
-          velocity = vec3 vx (getY person.velocity) vz,
-          rotation = (person.rotation + (rot / 40.0)) |> fixRot
-      }
 
 getHeight : Array Float -> ( Int, Int ) -> Float
 getHeight hmap (x, z) =
@@ -112,44 +42,6 @@ getTerrainHeight (x, _, z) hmap =
        h12 * ((toFloat x2) - x) * (z - (toFloat z1)) +
        h22 * (x - (toFloat x1)) * (z - (toFloat z1))
       )
-
-jump : Bool -> Person -> Person
-jump isJumping person =
-  if not isJumping || getY person.position > eyeLevel then
-    person
-  else
-    let
-      (vx,_,vz) = toTuple person.velocity
-    in
-      { person |
-          velocity = vec3 vx 5 vz
-      }
-
-
-physics : Float -> Array Float -> Person -> Person
-physics dt th person =
-  let
-    position =
-      person.position `add` V3.scale dt person.velocity
-    p = toRecord position
-    ty = eyeLevel + getTerrainHeight (toTuple position) th
-  in
-    { person |
-        position = if p.y < ty then vec3 p.x ty p.z else position
-    }
-
-
-gravity : Float -> Person -> Person
-gravity dt person =
-  let
-    p = toRecord person.position
-  in
-    let
-      v = toRecord person.velocity
-    in
-      { person |
-          velocity = vec3 v.x (v.y - 0.25 * dt) v.z
-      }
 
 
 type alias Sector =
@@ -209,33 +101,29 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = [0..7]
+    rows = [0..8]
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
-
--- SIGNALS
-world : List Texture -> Mat4 -> Person -> List Renderable
-world textures perspective person =
+view : List Texture -> Mat4 -> Person -> List Renderable
+view textures perspective camera =
   case textures of
-    [tex, tex2, hmap] ->
+    [tex, tex2, tex3, hmap] ->
       List.map
         (\sector ->
           (render vertexShader
                   fragmentShader
-                  sectorBlock  { stone=tex
-                               , soil=tex2
+                  sectorBlock  { grass=tex
+                               , drygrass=tex2
+                               , cliff=tex3
                                , heightmap=hmap
                                , texPos=Math.Vector2.vec2 (fst sector.texturePos) (snd sector.texturePos)
                                , sectorPos=Math.Vector2.vec2 (fst sector.position) (snd sector.position)
                                , perspective=perspective }))
-        (getSectors person)
+        (getSectors camera)
 
     _ -> []
 
-person : Signal Person
-person =
-  Signal.foldp update defaultPerson inputs
 
 getTexPos : { a | position : Vec3 } -> Vec2
 getTexPos person =
@@ -245,62 +133,13 @@ getTexPos person =
     Math.Vector2.vec2 ((toFloat (floor x)) + 0.0)
                       ((toFloat (floor z)) + 0.0)
 
-main : Signal Element
-main =
-  let
-    persp = (Signal.map2 perspective Window.dimensions person)
-    skypersp = (Signal.map2 skyperspective Window.dimensions person)
-    entities =
-      Signal.map2
-        (++)
-        (Signal.map2 Skybox.makeSkybox skypersp skyTextures.signal)
-        (Signal.map3 world
-          textures.signal
-          persp
-          person)
-
-    terrain =
-      Signal.map2 getTerrainHeight
-        (Signal.map (.position >> toTuple) person)
-        terrainHeightMap
-  in
-    Signal.map4 view Window.dimensions entities person terrain
-
-
 textures : Signal.Mailbox (List Texture)
 textures = Signal.mailbox []
 
-port fetchTextures : Task WebGL.Error ()
-port fetchTextures =
-  Task.sequence
-    [ loadTextureWithFilter Linear "texture/grass.jpg"
-    , loadTextureWithFilter Linear "texture/soil.jpg"
-    , loadTextureWithFilter Linear "texture/heightmap.png"
-    ]
-    `Task.andThen` (\tex -> Signal.send textures.address tex)
-
-port skyboxTextures : Task WebGL.Error()
-port skyboxTextures = Skybox.getTextures
-
-port terrainHeightMap : Signal (Array Float)
-
-inputs : Signal Inputs
-inputs =
-  let
-    dt = Signal.map (\t -> t/500) (fps 60)
-  in
-    Signal.map5
-      (,,,,)
-      Keyboard.space
-      (Signal.merge Keyboard.wasd Keyboard.arrows)
-      dt
-      terrainHeightMap
-      (Signal.map2 (,) Mouse.y Window.dimensions)
-      |> Signal.sampleOn dt
-
-
 -- VIEW
 
+-- TODO - we shouldn't be concerned with the perspective matrix,
+-- only the model matrix
 perspective : (Int,Int) -> Person -> Mat4
 perspective (w,h) person =
   let
@@ -312,51 +151,9 @@ perspective (w,h) person =
     `mul` makeRotate person.rotation (vec3 0 1 0.0)
     `mul` makeTranslate camera
 
-skyperspective : (Int,Int) -> Person -> Mat4
-skyperspective (w,h) person =
-  (makePerspective 45 (toFloat w / toFloat h) 0.10 255)
-  --`mul` makeRotate (pi / 2.0) (vec3 1 0 0)
-  `mul` makeRotate person.lookVert (vec3 1 0 0.0)
-  `mul` makeRotate person.rotation (vec3 0 1 0.0)
 
 
 
-view : (Int,Int) -> List Renderable -> Person -> Float -> Element
-view (w,h) entities person th =
-  layers
-    [ webgl (w,h) entities
-    --, container w 100 position message
-    , container w 100 position (cameraOutput person th)
-    ]
-
-
-position : Position
-position =
-  midLeftAt (absolute 10) (relative 0.1)
-
-
-formatFloat : String -> String
-formatFloat val =
-  String.foldl (\el (str, dist) ->
-    if dist == -1 then
-      case el of
-        '.' -> ((str ++ "."), 0)
-        _ -> ((str ++ (String.fromChar el)), -1)
-    else if dist < 2 then
-      ((str ++ (String.fromChar el)), (dist+1))
-    else (str, dist)
-    ) ("", -1) val
-    |> fst
-
-cameraOutput : Person -> Float -> Element
-cameraOutput person th =
-  let
-    (x, y, z) = toTuple person.position
-    pos =
-      List.map (toString >> formatFloat) [x, y, z, (person.rotation / (pi * 2.0)) * 360.0, th]
-      |> String.join ", "
-  in
-    leftAligned <| Text.monospace <| Text.fromString ("Pos: " ++ pos)
 
 -- Define the mesh for a terrain slice
 
@@ -410,7 +207,7 @@ uniform sampler2D heightmap;
 
 float height(vec2 pos) {
     vec4 texel = texture2DLod(heightmap, pos, 0.0);
-    return texel.x * 16.0;
+    return texel.r * 64.0;
 }
 
 void main () {
@@ -445,12 +242,13 @@ void main () {
 |]
 
 
-fragmentShader : Shader {} { u | stone:Texture, soil:Texture, heightmap:Texture} { vcoord:Vec2, hmapPos: Vec2, dist: Float, normal: Vec3 }
+fragmentShader : Shader {} { u | grass:Texture, drygrass:Texture, cliff:Texture, heightmap:Texture} { vcoord:Vec2, hmapPos: Vec2, dist: Float, normal: Vec3 }
 fragmentShader = [glsl|
 
 precision mediump float;
-uniform sampler2D stone;
-uniform sampler2D soil;
+uniform sampler2D grass;
+uniform sampler2D drygrass;
+uniform sampler2D cliff;
 uniform sampler2D heightmap;
 varying vec2 vcoord;
 varying vec3 normal;
@@ -461,12 +259,13 @@ void main () {
   vec4 col = texture2D(heightmap, hmapPos);
 
   vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
-  vec4 colVal = mix(base, texture2D(stone, vcoord), col.g);
-  colVal = mix(colVal, texture2D(soil, vcoord), col.b);
+  vec4 colVal = mix(base, texture2D(grass, vcoord), col.g);
+  colVal = mix(colVal, texture2D(drygrass, vcoord), col.b);
+  colVal = mix(colVal, texture2D(cliff, vcoord), col.a);
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 horizon = vec4(0.4, 0.4, 0.5, 0.7);
+  vec4 horizon = vec4(0.7, 0.7, 0.9, 1.0);
 
   vec3 surfaceToLight = normalize(vec3(-0.3, 0.2, 0.6));
 
@@ -475,10 +274,10 @@ void main () {
 
   colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
 
-  if (dist > 160.0) {
+  if (dist > 200.0) {
     discard;
-  } else if (dist > 128.0) {
-    gl_FragColor = mix(colVal, horizon, (dist - 128.0) / 32.0);
+  } else if (dist > 120.0) {
+    gl_FragColor = mix(colVal, horizon, (dist - 120.0) / 30.0);
   } else {
     gl_FragColor = colVal;
   }
