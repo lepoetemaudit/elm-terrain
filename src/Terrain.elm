@@ -1,13 +1,20 @@
 module Terrain (..) where
 
+import Array exposing (Array)
+import Task
+import Effects
+
 import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
 import WebGL exposing (..)
-import Array exposing (Array)
 
 import Types exposing (Person)
+
+
+type Action = TexturesLoaded (Maybe (List Texture))
+
 
 
 sectorSize : number
@@ -162,7 +169,6 @@ type alias Vertex =
     , coord : Vec3
     }
 
-
 makeTile : Int -> Int -> List (Vertex, Vertex, Vertex)
 makeTile sectorSize pos =
   let
@@ -179,6 +185,24 @@ makeTile sectorSize pos =
 
 sectorBlock : Drawable Vertex
 sectorBlock = Triangle (List.concatMap (makeTile sectorSize) [0..(sectorSize*sectorSize)-1])
+
+
+
+-- Required external resources
+
+textureNames : List String
+textureNames = ["grass", "soil", "tundra", "attributemap"]
+
+loadTextures : Effects.Effects Action
+loadTextures =
+  List.map
+    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t ++ ".jpg")
+    textureNames
+  |> Task.sequence
+  |> Task.toMaybe
+  |> Task.map TexturesLoaded
+  |> Effects.task
+
 -- Shaders
 
 vertexShader : Shader { position:Vec3, coord:Vec3 }

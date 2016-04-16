@@ -1,28 +1,46 @@
 module Skybox where
 
 import Task
-import Signal
 
 import WebGL exposing (..)
+import Effects exposing (Effects)
 import Math.Vector2 exposing (Vec2, vec2)
 import Math.Vector3 exposing (vec3, Vec3)
 import Math.Matrix4 as Mat4 exposing (Mat4, mul)
 
 import Types exposing (Person)
 
-textures : Signal.Mailbox (List Texture)
-textures = Signal.mailbox []
+type Action = TexturesLoaded (Maybe (List Texture))
 
+textures : List String
+textures = ["lf", "up", "ft", "bk", "rt", "dn"]
+
+{--
+loadTextures : Effects.Effects Action
+loadTextures =
+  List.map
+    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t ++ ".jpg")
+    textureNames
+  |> Task.sequence
+  |> Task.toMaybe
+  |> Task.map TexturesLoaded
+  |> Effects.task --}
+
+
+getTextures : Effects.Effects Action
 getTextures =
-  Task.sequence
-      [ loadTextureWithFilter Linear "texture/miramar_lf.jpeg" -- left
-      , loadTextureWithFilter Linear "texture/miramar_up.jpeg" -- ignore
-      , loadTextureWithFilter Linear "texture/miramar_ft.jpeg" -- front & good (flip?)
-      , loadTextureWithFilter Linear "texture/miramar_bk.jpeg" -- back
-      , loadTextureWithFilter Linear "texture/miramar_rt.jpeg" -- right & good (flip?)
-      , loadTextureWithFilter Linear "texture/miramar_dn.jpeg" -- ignore
-      ]
-      `Task.andThen` (\tex -> Signal.send textures.address tex)
+  (List.map (\t -> loadTextureWithFilter
+                         Linear
+                         ("texture/miramar_" ++ t ++ ".jpeg"))
+     textures)
+  |> Task.sequence
+  |> Task.toMaybe
+  |> Task.map TexturesLoaded
+  |> Effects.task
+
+
+
+
 
 cube : List (Drawable Vertex)
 cube =
@@ -62,7 +80,15 @@ type alias Vertex =
     , coord : Vec2
     }
 
-makeSkybox : Mat4 -> List Texture -> List Renderable
+type alias Model = List Texture
+
+init : Model
+init = []
+
+initEffects : List (Effects Action)
+initEffects = [getTextures]
+
+makeSkybox : Mat4 -> Model -> List Renderable
 makeSkybox perspective textures =
   List.map2
     (\tex tris ->
@@ -74,12 +100,21 @@ makeSkybox perspective textures =
               { facetex = tex, perspective = perspective } ) )
     textures cube
 
+update : Action -> Model -> (Model, Effects Action)
+update action model =
+  case action of
+    TexturesLoaded (Just textures) -> (textures, Effects.none)
+    -- TODO - capture higher up and throw warning
+    TexturesLoaded Nothing -> (model, Effects.none)
+
+
 -- TODO - this should return a model matrix, not a perspective one
 perspective : (Int,Int) -> Person -> Mat4
 perspective (w,h) person =
   (Mat4.makePerspective 45 (toFloat w / toFloat h) 0.10 255)
   `mul` Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
   `mul` Mat4.makeRotate person.rotation (vec3 0 1 0.0)
+
 
 -- Shaders
 
