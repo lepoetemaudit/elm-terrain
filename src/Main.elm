@@ -12,7 +12,6 @@ import Keyboard
 import Graphics.Element exposing (..)
 import Task
 import Text
-import Mouse
 import String
 import Time exposing (fps)
 
@@ -26,6 +25,8 @@ eyeLevel = 1.6
 
 type alias Model =
   { skybox : Skybox.Model
+  , person : Person
+  , keys : {x: Int, y: Int}
   , screen : (Int, Int) }
 
 type alias ScreenDimensions = ( Int, Int )
@@ -34,12 +35,13 @@ type Action
   = TerrainAction Terrain.Action
   | SkyboxAction Skybox.Action
   | Tick Time.Time ScreenDimensions
+  | Keyboard {x: Int, y: Int}
   | NoOp
 
 
 tickWithDimensions : Signal Action
 tickWithDimensions =
-  Signal.map2 Tick (fps 30) Window.dimensions
+  Signal.map2 Tick (fps 60) Window.dimensions
 
 initEffects : Effects Action
 initEffects =
@@ -49,7 +51,9 @@ initEffects =
 init : (Model, Effects Action)
 init =
   ( { skybox = Skybox.init
-    , screen = (0, 0) }
+    , person = defaultPerson
+    , screen = (0, 0)
+    , keys = { x = 0, y = 0 } }
   , initEffects )
 
 defaultPerson : Person
@@ -79,11 +83,12 @@ fixRot rot =
     rot
 
 
-walk : { x : Int, y : Int } -> Person -> Person
-walk directions person =
+walk : Float -> { x : Int, y : Int } -> Person -> Person
+walk delta directions person =
   let
     p = toRecord person.position
     rot = toFloat directions.x
+    rotSpeed = delta / 1000.0
     rotVal = person.rotation + (pi / 2.0)
     forward = toFloat directions.y
     vx = -(cos(rotVal) * forward * 4.0)
@@ -91,20 +96,8 @@ walk directions person =
     in
       { person |
           velocity = vec3 vx (getY person.velocity) vz,
-          rotation = (person.rotation + (rot / 40.0)) |> fixRot
+          rotation = (person.rotation + (rot * rotSpeed)) |> fixRot
       }
-
--- UPDATE
-
-{--
-update : Inputs -> Person -> Person
-update (directions, dt, th, (mouseY, (w, h))) person =
-  person
-    |> walk directions
-    |> mouseLook mouseY w h
-    |> gravity dt
-    |> physics dt th
---}
 
 nofx : Model -> ( Model, Effects a)
 nofx a = (a , Effects.none)
@@ -112,7 +105,10 @@ nofx a = (a , Effects.none)
 update : Action -> Model -> ( Model, Effects Action )
 update action model =
   case action of
-    Tick delta dim -> nofx { model | screen = dim }
+    Tick delta dim -> nofx { model | screen = dim
+                                   , person = walk delta model.keys model.person
+                                   |> physics delta }
+
 
     SkyboxAction act ->
       let (m, fx) = Skybox.update act model.skybox
@@ -122,8 +118,9 @@ update action model =
     -- TODO - delegate to terrain
     TerrainAction _ -> nofx model
 
-    NoOp -> nofx model
+    Keyboard keys -> nofx { model | keys = keys }
 
+    NoOp -> nofx model
 
 
 gravity : Float -> Person -> Person
@@ -138,13 +135,14 @@ gravity dt person =
           velocity = vec3 v.x (v.y - 0.25 * dt) v.z
       }
 
-physics : Float -> Array Float -> Person -> Person
-physics dt th person =
+physics : Float -> Person -> Person
+physics dt person =
   let
     position =
       person.position `add` Vector3.scale dt person.velocity
     p = toRecord position
-    ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
+    --ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
+    ty = 1.0
   in
     { person |
         position = if p.y < ty then vec3 p.x ty p.z else position
@@ -152,35 +150,6 @@ physics dt th person =
 
 
 port terrainHeightMap : Signal (Array Float)
-
-
-inputs : Signal Inputs
-inputs =
-  let
-    dt = Signal.map (\t -> t/500) (fps 60)
-  in
-    Signal.map4
-      (,,,)
-      (Signal.merge Keyboard.wasd Keyboard.arrows)
-      dt
-      terrainHeightMap
-      (Signal.map2 (,) Mouse.y Window.dimensions)
-      |> Signal.sampleOn dt
-
-
-{--
-view : (Int,Int) -> List Renderable -> Person -> Float -> Element
-view (w,h) entities person th =
-  layers
-    [ webgl (w,h) entities
-    , container w 100 (midLeftAt (absolute 10) (relative 0.1))
-                      (cameraOutput person th)
-    ]
-
---}
-
-
-
 
 
 cameraOutput : Person -> Float -> Element
@@ -192,28 +161,6 @@ cameraOutput person th =
       |> String.join ", "
   in
     leftAligned <| Text.monospace <| Text.fromString ("Pos: " ++ pos)
-
-
-{--
-gl : Signal Element
-gl =
-  let
-    skyTexMb = Skybox.textures
-    persp = (Signal.map2 Terrain.perspective Window.dimensions person)
-    skypersp = (Signal.map2 Skybox.perspective Window.dimensions person)
-    entities =
-      Signal.map2
-        (++)
-        (Signal.map2 Skybox.makeSkybox skypersp skyTexMb.signal)
-        (Signal.map3 Terrain.view terrainTexMb.signal persp person)
-
-    terrain =
-      Signal.map2 Terrain.getTerrainHeight
-        (Signal.map (.position >> toTuple) person)
-        terrainHeightMap
-  in
-    Signal.map4 view Window.dimensions entities person terrain
---}
 
 fov : Float
 fov = 45
@@ -233,7 +180,7 @@ glElement model =
   let
     (w, h) = model.screen
     perspectiveMatrix = perspective w h
-    skybox = Skybox.makeSkybox perspectiveMatrix model.skybox
+    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox
   in
     webgl model.screen skybox
 
@@ -245,20 +192,26 @@ debugReadout model =
         , ("top", "0")
         , ("left", "0") ] ]
 
-    [ text <| toString model.screen]
+    [ text <| "screen=" ++ (toString model.screen) ++
+      "; keys=" ++ (toString model.keys) ++
+      "; camera=" ++ (toString model.person)]
 
 view : Signal.Address Action -> Model -> Html.Html
 view address model =
   div [] [ Html.fromElement <| glElement model
          , debugReadout model ]
 
+keyboard : Signal Action
+keyboard =
+  Signal.merge Keyboard.wasd Keyboard.arrows
+  |> Signal.map Keyboard
 
 app : StartApp.App Model
 app =
   start { init = init
         , update = update
         , view = view
-        , inputs = [ tickWithDimensions ] }
+        , inputs = [ tickWithDimensions, keyboard ] }
 
 main : Signal Html.Html
 main = app.html

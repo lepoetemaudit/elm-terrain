@@ -88,8 +88,8 @@ init = []
 initEffects : List (Effects Action)
 initEffects = [getTextures]
 
-makeSkybox : Mat4 -> Model -> List Renderable
-makeSkybox perspective textures =
+makeSkybox : Mat4 -> Person -> Model -> List Renderable
+makeSkybox perspective person textures =
   List.map2
     (\tex tris ->
       (renderWithConfig
@@ -97,7 +97,9 @@ makeSkybox perspective textures =
               vertexShader
               fragmentShader
               tris
-              { facetex = tex, perspective = perspective } ) )
+              { facetex = tex
+              , perspective = perspective
+              , model = modelMatrix person } ) )
     textures cube
 
 update : Action -> Model -> (Model, Effects Action)
@@ -108,18 +110,16 @@ update action model =
     TexturesLoaded Nothing -> (model, Effects.none)
 
 
--- TODO - this should return a model matrix, not a perspective one
-perspective : (Int,Int) -> Person -> Mat4
-perspective (w,h) person =
-  (Mat4.makePerspective 45 (toFloat w / toFloat h) 0.10 255)
-  `mul` Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
+modelMatrix : Person -> Mat4
+modelMatrix person =
+   Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
   `mul` Mat4.makeRotate person.rotation (vec3 0 1 0.0)
 
 
 -- Shaders
 
 vertexShader : Shader { attr | position:Vec3, coord: Vec2 }
-                      {u | facetex: Texture, perspective: Mat4} { texcoord: Vec2}
+                      {u | facetex: Texture, perspective: Mat4, model: Mat4} { texcoord: Vec2}
 vertexShader = [glsl|
 precision mediump float;
 
@@ -127,9 +127,10 @@ attribute vec3 position;
 attribute vec2 coord;
 varying vec2 texcoord;
 uniform mat4 perspective;
+uniform mat4 model;
 void main () {
     texcoord = vec2(coord.x, 1.0-coord.y);
-    gl_Position = perspective * vec4(position * 145.0, 1.0);
+    gl_Position = perspective * model * vec4(position * 165.0, 1.0);
 }
 |]
 
