@@ -15,18 +15,6 @@ type Action = TexturesLoaded (Maybe (List Texture))
 textures : List String
 textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
-{--
-loadTextures : Effects.Effects Action
-loadTextures =
-  List.map
-    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t ++ ".jpg")
-    textureNames
-  |> Task.sequence
-  |> Task.toMaybe
-  |> Task.map TexturesLoaded
-  |> Effects.task --}
-
-
 getTextures : Effects.Effects Action
 getTextures =
   (List.map (\t -> loadTextureWithFilter
@@ -37,9 +25,6 @@ getTextures =
   |> Task.toMaybe
   |> Task.map TexturesLoaded
   |> Effects.task
-
-
-
 
 
 cube : List (Drawable Vertex)

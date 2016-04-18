@@ -21,10 +21,11 @@ import Types exposing (Person)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
-eyeLevel = 1.6
+eyeLevel = 30.6
 
 type alias Model =
   { skybox : Skybox.Model
+  , terrain : Terrain.Model
   , person : Person
   , keys : {x: Int, y: Int}
   , screen : (Int, Int) }
@@ -46,11 +47,13 @@ tickWithDimensions =
 initEffects : Effects Action
 initEffects =
   List.map (Effects.map SkyboxAction) Skybox.initEffects
+  ++ List.map (Effects.map TerrainAction) Terrain.initEffects
   |> Effects.batch
 
 init : (Model, Effects Action)
 init =
   ( { skybox = Skybox.init
+    , terrain = Terrain.init
     , person = defaultPerson
     , screen = (0, 0)
     , keys = { x = 0, y = 0 } }
@@ -115,8 +118,11 @@ update action model =
       in
         ( { model | skybox = m}, Effects.map SkyboxAction fx )
 
-    -- TODO - delegate to terrain
-    TerrainAction _ -> nofx model
+    TerrainAction act ->
+      let (m, fx) = Terrain.update act model.terrain
+      in
+        ( { model | terrain = m}, Effects.map TerrainAction fx )
+
 
     Keyboard keys -> nofx { model | keys = keys }
 
@@ -139,7 +145,7 @@ physics : Float -> Person -> Person
 physics dt person =
   let
     position =
-      person.position `add` Vector3.scale dt person.velocity
+      person.position `add` Vector3.scale (dt / 500.0) person.velocity
     p = toRecord position
     --ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
     ty = 1.0
@@ -181,8 +187,9 @@ glElement model =
     (w, h) = model.screen
     perspectiveMatrix = perspective w h
     skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox
+    terrain = Terrain.view perspectiveMatrix model.person model.terrain
   in
-    webgl model.screen skybox
+    webgl model.screen (skybox ++ terrain)
 
 debugReadout : Model -> Html.Html
 debugReadout model =
@@ -194,7 +201,8 @@ debugReadout model =
 
     [ text <| "screen=" ++ (toString model.screen) ++
       "; keys=" ++ (toString model.keys) ++
-      "; camera=" ++ (toString model.person)]
+      "; camera=" ++ (toString model.person) ++
+      "; terrain=" ++ (toString (List.length model.terrain))]
 
 view : Signal.Address Action -> Model -> Html.Html
 view address model =

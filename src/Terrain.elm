@@ -14,7 +14,10 @@ import Types exposing (Person)
 
 
 type Action = TexturesLoaded (Maybe (List Texture))
+type alias Model = List Texture
 
+init : Model
+init = []
 
 
 sectorSize : number
@@ -112,9 +115,9 @@ getSectors person =
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
-view : List Texture -> Mat4 -> Person -> List Renderable
-view textures perspective camera =
-  case textures of
+view : Mat4 -> Person -> Model -> List Renderable
+view perspective camera model =
+  case model of
     [tex, tex2, tex3, hmap] ->
       List.map
         (\sector ->
@@ -126,7 +129,8 @@ view textures perspective camera =
                                , heightmap=hmap
                                , texPos=Math.Vector2.vec2 (fst sector.texturePos) (snd sector.texturePos)
                                , sectorPos=Math.Vector2.vec2 (fst sector.position) (snd sector.position)
-                               , perspective=perspective }))
+                               , perspective=perspective
+                               , model=modelMatrix camera}))
         (getSectors camera)
 
     _ -> []
@@ -145,21 +149,15 @@ textures = Signal.mailbox []
 
 -- VIEW
 
--- TODO - we shouldn't be concerned with the perspective matrix,
--- only the model matrix
-perspective : (Int,Int) -> Person -> Mat4
-perspective (w,h) person =
+modelMatrix : Person -> Mat4
+modelMatrix person =
   let
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
-    (makePerspective 45 (toFloat w / toFloat h) 0.10 255)
-    `mul` makeRotate person.lookVert (vec3 1 0 0.0)
+    makeRotate person.lookVert (vec3 1 0 0.0)
     `mul` makeRotate person.rotation (vec3 0 1 0.0)
     `mul` makeTranslate camera
-
-
-
 
 
 -- Define the mesh for a terrain slice
@@ -186,27 +184,36 @@ makeTile sectorSize pos =
 sectorBlock : Drawable Vertex
 sectorBlock = Triangle (List.concatMap (makeTile sectorSize) [0..(sectorSize*sectorSize)-1])
 
-
+update : Action -> Model -> (Model, Effects.Effects Action)
+update action model =
+  case action of
+    TexturesLoaded (Just textures) -> (textures, Effects.none)
+    TexturesLoaded Nothing -> (model, Effects.none)
 
 -- Required external resources
 
 textureNames : List String
-textureNames = ["grass", "soil", "tundra", "attributemap"]
+textureNames = ["grass.jpg", "soil.jpg", "tundra.jpg", "attributemap.png"]
 
 loadTextures : Effects.Effects Action
 loadTextures =
   List.map
-    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t ++ ".jpg")
+    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t)
     textureNames
   |> Task.sequence
   |> Task.toMaybe
   |> Task.map TexturesLoaded
   |> Effects.task
 
+
+initEffects : List (Effects.Effects Action)
+initEffects = [loadTextures]
+
 -- Shaders
 
 vertexShader : Shader { position:Vec3, coord:Vec3 }
                       { u | perspective:Mat4
+                      , model:Mat4
                       , heightmap:Texture
                       , texPos:Vec2
                       , sectorPos: Vec2 }
@@ -221,6 +228,7 @@ attribute vec3 position;
 attribute vec3 coord;
 
 uniform mat4 perspective;
+uniform mat4 model;
 uniform vec2 sectorPos;
 varying vec2 vcoord;
 uniform vec2 texPos;
@@ -239,7 +247,7 @@ void main () {
 
   float vHeight = height(texelPos);
   vec2 pos = position.xz + sectorPos;
-  vec4 outputPos = perspective * vec4(pos.x, vHeight, pos.y, 1.0);
+  vec4 outputPos = perspective * model * vec4(pos.x, vHeight, pos.y, 1.0);
   vcoord = coord.xy;
   gl_Position = outputPos;
   dist = outputPos.z;
