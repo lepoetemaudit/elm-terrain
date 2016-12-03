@@ -7,8 +7,8 @@ default: build output/elm.js output/terrain.html
 watch: 
 	nodemon --exec "elm-make --warn --output build/elm.js" ./src/Main.elm
 
-output/elm.js: src/Terrain.elm
-	elm-make src/Terrain.elm --output build/elm.js
+output/elm.js: src/Main.elm src/Terrain.elm
+	elm-make src/Main.elm --output build/elm.js
 
 output/terrain.html: src/terrain.html
 	cp src/terrain.html build/terrain.html 

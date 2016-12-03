@@ -1,19 +1,19 @@
-module Terrain (..) where
+module Terrain exposing (..)
 
 import Array exposing (Array)
 import Task
-import Effects
 
 import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
 import WebGL exposing (..)
+import Tuple exposing (first, second)
 
 import Types exposing (Person)
 
 
-type Action = TexturesLoaded (Maybe (List Texture))
+type Action = TexturesLoaded (List Texture)
 type alias Model = List Texture
 
 init : Model
@@ -45,7 +45,7 @@ getTerrainHeight (x, _, z) hmap =
                            , gh (x2, z1)
                            , gh (x1, z2)
                            , gh (x2, z2) )
-    in
+  in
 
       (h11 * ((toFloat x2) - x) * ((toFloat z2) - z) +
        h21 * (x - (toFloat x1)) * ((toFloat z2) - z) +
@@ -81,7 +81,7 @@ makeSector rowNum person fov colNum =
 
     texturePos = getSectorPos (x + pX) (z + pZ)
     userSector = getSectorPos pX pZ
-    sectorPos = (fst texturePos - fst userSector, snd texturePos - snd userSector)
+    sectorPos = (first texturePos - first userSector, second texturePos - second userSector)
 
     (tx, ty) = texturePos
 
@@ -100,7 +100,7 @@ getSectorRow rowNum person fov =
   let
       length = (toFloat rowNum) * sectorSize
       width = (cos fov) * length
-      cols = [-1..((width / sectorSize) * 2.1 |> round)+1]
+      cols = List.range -1 <| ((width / sectorSize) * 2.1 |> round)+1
   in
       List.filterMap (makeSector rowNum person fov) cols
 
@@ -111,7 +111,7 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = [0..8]
+    rows = List.range 0 8
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
@@ -127,8 +127,8 @@ view perspective camera model =
                                , drygrass=tex2
                                , cliff=tex3
                                , heightmap=hmap
-                               , texPos=Math.Vector2.vec2 (fst sector.texturePos) (snd sector.texturePos)
-                               , sectorPos=Math.Vector2.vec2 (fst sector.position) (snd sector.position)
+                               , texPos=Math.Vector2.vec2 (first sector.texturePos) (second sector.texturePos)
+                               , sectorPos=Math.Vector2.vec2 (first sector.position) (second sector.position)
                                , perspective=perspective
                                , model=modelMatrix camera}))
         (getSectors camera)
@@ -144,9 +144,6 @@ getTexPos person =
     Math.Vector2.vec2 ((toFloat (floor x)) + 0.0)
                       ((toFloat (floor z)) + 0.0)
 
-textures : Signal.Mailbox (List Texture)
-textures = Signal.mailbox []
-
 -- VIEW
 
 modelMatrix : Person -> Mat4
@@ -155,9 +152,10 @@ modelMatrix person =
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
+    -- ORDERING???
     makeRotate person.lookVert (vec3 1 0 0.0)
-    `mul` makeRotate person.rotation (vec3 0 1 0.0)
-    `mul` makeTranslate camera
+    |> mul (makeRotate person.rotation (vec3 0 1 0.0))
+    |> mul (makeTranslate camera)
 
 
 -- Define the mesh for a terrain slice
@@ -182,32 +180,23 @@ makeTile sectorSize pos =
     ]
 
 sectorBlock : Drawable Vertex
-sectorBlock = Triangle (List.concatMap (makeTile sectorSize) [0..(sectorSize*sectorSize)-1])
-
-update : Action -> Model -> (Model, Effects.Effects Action)
-update action model =
-  case action of
-    TexturesLoaded (Just textures) -> (textures, Effects.none)
-    TexturesLoaded Nothing -> (model, Effects.none)
+sectorBlock = Triangle (List.concatMap (makeTile sectorSize) <| List.range 0 <| (sectorSize*sectorSize)-1)
 
 -- Required external resources
 
 textureNames : List String
 textureNames = ["grass.jpg", "soil.jpg", "tundra.jpg", "attributemap.png"]
 
-loadTextures : Effects.Effects Action
+loadTextures : Task.Task Error Action
 loadTextures =
   List.map
     (\t -> loadTextureWithFilter Linear <| "texture/" ++ t)
     textureNames
   |> Task.sequence
-  |> Task.toMaybe
   |> Task.map TexturesLoaded
-  |> Effects.task
+  |> Debug.log "texture loading: "
+  
 
-
-initEffects : List (Effects.Effects Action)
-initEffects = [loadTextures]
 
 -- Shaders
 

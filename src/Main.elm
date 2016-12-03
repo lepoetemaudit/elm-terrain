@@ -1,5 +1,3 @@
-import StartApp exposing (start)
-import Effects exposing (Effects)
 import Array exposing (Array)
 import Window
 import Html exposing (div, text)
@@ -9,15 +7,12 @@ import WebGL exposing (..)
 import Math.Vector3 as Vector3 exposing (toTuple, vec3, toRecord, add, getY)
 import Math.Matrix4 as Mat4
 import Keyboard
-import Graphics.Element exposing (..)
-import Task
-import Text
 import String
-import Time exposing (fps)
+import Task
 
 import Terrain
 import Skybox
-import Types exposing (Person)
+import Types exposing (Person, ProgramFlags)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
@@ -32,32 +27,31 @@ type alias Model =
 
 type alias ScreenDimensions = ( Int, Int )
 
-type Action
-  = TerrainAction Terrain.Action
+type Action 
+  = NoOp
   | SkyboxAction Skybox.Action
-  | Tick Time.Time ScreenDimensions
-  | Keyboard {x: Int, y: Int}
-  | NoOp
-
-
-tickWithDimensions : Signal Action
-tickWithDimensions =
-  Signal.map2 Tick (fps 60) Window.dimensions
-
-initEffects : Effects Action
-initEffects =
-  List.map (Effects.map SkyboxAction) Skybox.initEffects
-  ++ List.map (Effects.map TerrainAction) Terrain.initEffects
-  |> Effects.batch
-
-init : (Model, Effects Action)
-init =
+  | WindowResize Window.Size
+  --= TerrainAction Terrain.Action
+  --| SkyboxAction Skybox.Action
+  --| Keyboard {x: Int, y: Int}
+  --| NoOp
+  
+init hmap =
   ( { skybox = Skybox.init
     , terrain = Terrain.init
     , person = defaultPerson
     , screen = (0, 0)
     , keys = { x = 0, y = 0 } }
-  , initEffects )
+  , Cmd.batch 
+      [ Skybox.getTextures 
+        |> Task.attempt (\r ->
+        case r of
+          Ok result -> SkyboxAction result
+          Result.Err e -> NoOp
+        )
+      , Task.perform WindowResize Window.size
+      ]
+  )
 
 defaultPerson : Person
 defaultPerson =
@@ -73,7 +67,6 @@ type alias Inputs =
 mouseLook : Int -> Int -> Int -> Person -> Person
 mouseLook mouseY w h person =
   { person | lookVert = -(pi/2.0) + ((toFloat mouseY) / (toFloat h)) * pi  }
-
 
 -- TODO - replace this with fmod
 fixRot : Float -> Float
@@ -96,23 +89,27 @@ walk delta directions person =
     forward = toFloat directions.y
     vx = -(cos(rotVal) * forward * 4.0)
     vz = -(sin(rotVal) * forward * 4.0)
-    in
-      { person |
-          velocity = vec3 vx (getY person.velocity) vz,
-          rotation = (person.rotation + (rot * rotSpeed)) |> fixRot
-      }
+  in
+    { person 
+      | velocity = vec3 vx (getY person.velocity) vz
+      , rotation = (person.rotation + (rot * rotSpeed)) |> fixRot
+    }
 
-nofx : Model -> ( Model, Effects a)
-nofx a = (a , Effects.none)
-
-update : Action -> Model -> ( Model, Effects Action )
-update action model =
+update : Action -> Model -> ( Model, Cmd msg )
+update action model =  
   case action of
+    SkyboxAction a -> 
+      let (m, cmd) = Skybox.update a model.skybox
+      in 
+        { model | skybox = m } ! [cmd]
+
+    WindowResize s -> { model | screen = (s.width, s.height) } ! []
+    {--
     Tick delta dim -> nofx { model | screen = dim
                                    , person = walk delta model.keys model.person
-                                   |> physics delta }
+                                  |> physics delta } --}
 
-
+    {--
     SkyboxAction act ->
       let (m, fx) = Skybox.update act model.skybox
       in
@@ -121,12 +118,12 @@ update action model =
     TerrainAction act ->
       let (m, fx) = Terrain.update act model.terrain
       in
-        ( { model | terrain = m}, Effects.map TerrainAction fx )
+        ( { model | terrain = m}, Effects.map TerrainAction fx ) --}
 
 
-    Keyboard keys -> nofx { model | keys = keys }
+    -- Keyboard keys -> nofx { model | keys = keys }
 
-    NoOp -> nofx model
+    NoOp -> model ! []
 
 
 gravity : Float -> Person -> Person
@@ -145,7 +142,7 @@ physics : Float -> Person -> Person
 physics dt person =
   let
     position =
-      person.position `add` Vector3.scale (dt / 500.0) person.velocity
+      add person.position <| Vector3.scale (dt / 500.0) person.velocity
     p = toRecord position
     --ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
     ty = 1.0
@@ -154,10 +151,7 @@ physics dt person =
         position = if p.y < ty then vec3 p.x ty p.z else position
     }
 
-
-port terrainHeightMap : Signal (Array Float)
-
-
+{--
 cameraOutput : Person -> Float -> Element
 cameraOutput person th =
   let
@@ -167,6 +161,7 @@ cameraOutput person th =
       |> String.join ", "
   in
     leftAligned <| Text.monospace <| Text.fromString ("Pos: " ++ pos)
+--}
 
 fov : Float
 fov = 45
@@ -181,17 +176,18 @@ perspective : Int -> Int -> Mat4.Mat4
 perspective w h =
   Mat4.makePerspective fov (toFloat w / toFloat h) near far
 
-glElement : Model -> Element
 glElement model =
   let
     (w, h) = model.screen
     perspectiveMatrix = perspective w h
-    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox
-    terrain = Terrain.view perspectiveMatrix model.person model.terrain
+    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox |> Debug.log "skybox"
+    terrain = Terrain.view perspectiveMatrix model.person model.terrain 
   in
-    webgl model.screen (skybox ++ terrain)
+    WebGL.toHtml [ Html.Attributes.width w
+                 , Html.Attributes.height h ] 
+                 (skybox ++ terrain)
 
-debugReadout : Model -> Html.Html
+debugReadout : Model -> Html.Html a
 debugReadout model =
   div
     [ style
@@ -204,26 +200,15 @@ debugReadout model =
       "; camera=" ++ (toString model.person) ++
       "; terrain=" ++ (toString (List.length model.terrain))]
 
-view : Signal.Address Action -> Model -> Html.Html
-view address model =
-  div [] [ Html.fromElement <| glElement model
-         , debugReadout model ]
+view : Model -> Html.Html msg
+view model =
+  div [] [ glElement model ]
 
-keyboard : Signal Action
-keyboard =
-  Signal.merge Keyboard.wasd Keyboard.arrows
-  |> Signal.map Keyboard
-
-app : StartApp.App Model
-app =
-  start { init = init
-        , update = update
+main : Program ProgramFlags Model Action
+main =
+    Html.programWithFlags
+        { init = init
         , view = view
-        , inputs = [ tickWithDimensions, keyboard ] }
-
-main : Signal Html.Html
-main = app.html
-
-port tasks : Signal (Task.Task Effects.Never ())
-port tasks =
-  app.tasks
+        , subscriptions = (\_ -> Window.resizes WindowResize)
+        , update = update
+        }

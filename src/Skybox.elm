@@ -1,30 +1,28 @@
-module Skybox where
+module Skybox exposing (..)
 
 import Task
 
 import WebGL exposing (..)
-import Effects exposing (Effects)
 import Math.Vector2 exposing (Vec2, vec2)
 import Math.Vector3 exposing (vec3, Vec3)
 import Math.Matrix4 as Mat4 exposing (Mat4, mul)
 
 import Types exposing (Person)
 
-type Action = TexturesLoaded (Maybe (List Texture))
+type Action = TexturesLoaded (List Texture)
 
 textures : List String
 textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
-getTextures : Effects.Effects Action
+getTextures : Task.Task Error Action
 getTextures =
   (List.map (\t -> loadTextureWithFilter
                          Linear
                          ("texture/miramar_" ++ t ++ ".jpeg"))
      textures)
   |> Task.sequence
-  |> Task.toMaybe
   |> Task.map TexturesLoaded
-  |> Effects.task
+  |> Debug.log "skybox textures"
 
 
 cube : List (Drawable Vertex)
@@ -70,8 +68,10 @@ type alias Model = List Texture
 init : Model
 init = []
 
-initEffects : List (Effects Action)
-initEffects = [getTextures]
+update : Action -> a -> ( List Texture, Cmd msg )
+update msg model =
+  case msg of
+    TexturesLoaded tex -> tex ! []  
 
 makeSkybox : Mat4 -> Person -> Model -> List Renderable
 makeSkybox perspective person textures =
@@ -87,18 +87,12 @@ makeSkybox perspective person textures =
               , model = modelMatrix person } ) )
     textures cube
 
-update : Action -> Model -> (Model, Effects Action)
-update action model =
-  case action of
-    TexturesLoaded (Just textures) -> (textures, Effects.none)
-    -- TODO - capture higher up and throw warning
-    TexturesLoaded Nothing -> (model, Effects.none)
-
 
 modelMatrix : Person -> Mat4
 modelMatrix person =
+  -- ORDERING ??
    Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
-  `mul` Mat4.makeRotate person.rotation (vec3 0 1 0.0)
+  |> mul (Mat4.makeRotate person.rotation (vec3 0 1 0.0))
 
 
 -- Shaders
