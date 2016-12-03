@@ -19,6 +19,10 @@ type alias Model = List Texture
 init : Model
 init = []
 
+update a model =
+  case a of
+    TexturesLoaded texes ->
+      texes ! []
 
 sectorSize : number
 sectorSize = 32
@@ -185,7 +189,7 @@ sectorBlock = Triangle (List.concatMap (makeTile sectorSize) <| List.range 0 <| 
 -- Required external resources
 
 textureNames : List String
-textureNames = ["grass.jpg", "soil.jpg", "tundra.jpg", "attributemap.png"]
+textureNames = ["grass.jpg", "soil.jpg", "tundra.jpg", "heightmap.png"]
 
 loadTextures : Task.Task Error Action
 loadTextures =

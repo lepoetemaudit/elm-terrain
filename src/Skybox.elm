@@ -14,8 +14,8 @@ type Action = TexturesLoaded (List Texture)
 textures : List String
 textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
-getTextures : Task.Task Error Action
-getTextures =
+loadTextures : Task.Task Error Action
+loadTextures =
   (List.map (\t -> loadTextureWithFilter
                          Linear
                          ("texture/miramar_" ++ t ++ ".jpeg"))

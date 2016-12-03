@@ -31,7 +31,7 @@ type Action
   = NoOp
   | SkyboxAction Skybox.Action
   | WindowResize Window.Size
-  --= TerrainAction Terrain.Action
+  | TerrainAction Terrain.Action
   --| SkyboxAction Skybox.Action
   --| Keyboard {x: Int, y: Int}
   --| NoOp
@@ -43,12 +43,12 @@ init hmap =
     , screen = (0, 0)
     , keys = { x = 0, y = 0 } }
   , Cmd.batch 
-      [ Skybox.getTextures 
-        |> Task.attempt (\r ->
-        case r of
-          Ok result -> SkyboxAction result
-          Result.Err e -> NoOp
-        )
+      [ Task.attempt 
+          ((Result.map SkyboxAction) >> (Result.withDefault NoOp))
+          Skybox.loadTextures  
+      , Task.attempt 
+          ((Result.map TerrainAction) >> (Result.withDefault NoOp))
+          Terrain.loadTextures  
       , Task.perform WindowResize Window.size
       ]
   )
@@ -102,6 +102,11 @@ update action model =
       let (m, cmd) = Skybox.update a model.skybox
       in 
         { model | skybox = m } ! [cmd]
+
+    TerrainAction a ->
+      let (m, cmd) = Terrain.update a model.terrain
+      in
+        { model | terrain = m} ! [cmd]
 
     WindowResize s -> { model | screen = (s.width, s.height) } ! []
     {--
@@ -180,7 +185,7 @@ glElement model =
   let
     (w, h) = model.screen
     perspectiveMatrix = perspective w h
-    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox |> Debug.log "skybox"
+    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox
     terrain = Terrain.view perspectiveMatrix model.person model.terrain 
   in
     WebGL.toHtml [ Html.Attributes.width w
