@@ -118,7 +118,7 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = List.range 0 12
+    rows = List.range 0 8
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
@@ -167,8 +167,8 @@ modelMatrix person =
   in
     -- ORDERING???
     makeRotate person.lookVert (vec3 1 0 0.0)
-    |> mul (makeRotate person.rotation (vec3 0 1 0.0))
     |> mul (makeTranslate camera)
+    |> mul (makeRotate person.rotation (vec3 0 1 0.0))
 
 
 -- Define the mesh for a terrain slice

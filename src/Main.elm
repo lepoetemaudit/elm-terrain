@@ -19,11 +19,12 @@ import Types exposing (Person, ProgramFlags)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
-eyeLevel = 30.6
+eyeLevel = 3.6
 
 type alias Model =
   { skybox : Skybox.Model
   , terrain : Terrain.Model
+  , heightmap : Array Float
   , person : Person
   , keys : Set Keyboard.KeyCode
   , screen : (Int, Int) }
@@ -39,11 +40,12 @@ type Action
   | KeyDown Keyboard.KeyCode
   | Frame Time
   
-init hmap =
+init flags =
   ( { skybox = Skybox.init
     , terrain = Terrain.init
     , person = defaultPerson
     , screen = (0, 0)
+    , heightmap = flags.terrainHeightMap
     , keys = Set.empty }
   , Cmd.batch 
       [ Task.attempt 
@@ -59,7 +61,7 @@ init hmap =
 defaultPerson : Person
 defaultPerson =
   { position = vec3 108.05 eyeLevel 44.00
-  , velocity = vec3 0 0 0
+  , velocity = vec3 0.0 0 5.0
   , rotation = pi
   , lookVert = 0.0
   }
@@ -97,8 +99,8 @@ walk delta directions person =
 
 updateFrame : Float -> Model -> Model
 updateFrame delta model =
-  let person = model.person in
-    { model | person = { person | rotation = model.person.rotation + delta / 1000.0 } }
+  let person = model.person |> gravity delta |> physics model delta in
+    { model | person = person }
 
 update : Action -> Model -> ( Model, Cmd msg )
 update action model =  
@@ -138,14 +140,14 @@ gravity dt person =
           velocity = vec3 v.x (v.y - 0.25 * dt) v.z
       }
 
-physics : Float -> Person -> Person
-physics dt person =
+physics : Model -> Float -> Person -> Person
+physics model dt person =
   let
     position =
       add person.position <| Vector3.scale (dt / 500.0) person.velocity
     p = toRecord position
-    --ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
-    ty = 1.0
+    ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) model.heightmap
+    
   in
     { person |
         position = if p.y < ty then vec3 p.x ty p.z else position
