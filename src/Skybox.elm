@@ -2,10 +2,13 @@ module Skybox exposing (..)
 
 import Task
 
-import WebGL exposing (..)
+import WebGL exposing (Entity, Shader, entity, entityWith)
+import WebGL.Texture exposing (..)
+import WebGL.Settings as Settings
 import Math.Vector2 exposing (Vec2, vec2)
 import Math.Vector3 exposing (vec3, Vec3)
 import Math.Matrix4 as Mat4 exposing (Mat4, mul)
+
 
 import Types exposing (Person)
 
@@ -16,8 +19,8 @@ textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
 loadTextures : Task.Task Error Action
 loadTextures =
-  (List.map (\t -> loadTextureWithFilter
-                         Linear
+  (List.map (\t -> load
+ 
                          ("texture/miramar_" ++ t ++ ".jpeg"))
      textures)
   |> Task.sequence
@@ -25,7 +28,6 @@ loadTextures =
   |> Debug.log "skybox textures"
 
 
-cube : List (Drawable Vertex)
 cube =
   let
     rft = vec3  1  1  1   -- right, front, top
@@ -37,7 +39,7 @@ cube =
     lfb = vec3 -1  1 -1
     lbb = vec3 -1 -1 -1
 
-  in List.map Triangle
+  in List.map WebGL.triangles
       [ face rft rfb rbb rbt   -- right
       , face rfb rft lft lfb   -- front (ignore)
       , face lft rft rbt lbt   -- top (actual front)
@@ -73,12 +75,11 @@ update msg model =
   case msg of
     TexturesLoaded tex -> tex ! []  
 
-makeSkybox : Mat4 -> Person -> Model -> List Renderable
+makeSkybox : Mat4 -> Person -> Model -> List Entity
 makeSkybox perspective person textures =
   List.map2
     (\tex tris ->
-      (renderWithConfig
-              []
+      (entityWith [Settings.cullFace Settings.back]
               vertexShader
               fragmentShader
               tris

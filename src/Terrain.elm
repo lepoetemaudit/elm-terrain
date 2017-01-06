@@ -7,7 +7,10 @@ import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
-import WebGL exposing (..)
+import WebGL exposing (Shader, triangles, entity, entityWith, Entity)
+import WebGL.Settings as Settings
+import WebGL.Texture as Texture exposing (..)
+import WebGL.Settings.DepthTest as DepthTest
 import Tuple exposing (first, second)
 
 import Types exposing (Person)
@@ -115,17 +118,23 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = List.range 0 8
+    rows = List.range 0 12
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
-view : Mat4 -> Person -> Model -> List Renderable
+view : Mat4 -> Person -> Model -> List Entity
 view perspective camera model =
   case model of
     [tex, tex2, tex3, hmap] ->
       List.map
         (\sector ->
-          (render vertexShader
+          (entityWith
+                  [ Settings.cullFace Settings.back
+                  , DepthTest.less { write = True
+                                   , near = 0
+                                   , far = 1
+                  }]
+                  vertexShader
                   fragmentShader
                   sectorBlock  { grass=tex
                                , drygrass=tex2
@@ -183,18 +192,16 @@ makeTile sectorSize pos =
     , (bottomLeft,topRight,bottomRight)
     ]
 
-sectorBlock : Drawable Vertex
-sectorBlock = Triangle (List.concatMap (makeTile sectorSize) <| List.range 0 <| (sectorSize*sectorSize)-1)
+sectorBlock = triangles (List.concatMap (makeTile sectorSize) <| List.range 0 <| (sectorSize*sectorSize)-1)
 
 -- Required external resources
 
 textureNames : List String
-textureNames = ["grass.jpg", "soil.jpg", "soil.jpg", "heightmap.png"]
+textureNames = ["grass.jpg", "tundra.jpg", "soil.jpg", "heightmap.png"]
 
-loadTextures : Task.Task Error Action
 loadTextures =
   List.map
-    (\t -> loadTextureWithFilter Nearest <| "texture/" ++ t)
+    (\t -> Texture.load <| "texture/" ++ t)
     textureNames
   |> Task.sequence
   |> Task.map TexturesLoaded
@@ -281,31 +288,27 @@ varying vec2 hmapPos;
 varying float dist;
 
 void main () {
-  vec4 col = texture2D(heightmap, hmapPos);
+  //vec4 colVal = vec4(texture2D(heightmap, hmapPos).gba, 1.0);
 
-  vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
-  vec4 colVal = mix(base, texture2D(grass, vcoord), col.g);
-  colVal = mix(colVal, texture2D(drygrass, vcoord), col.b);
-  colVal = mix(colVal, texture2D(cliff, vcoord), col.a);
+  //vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
+  //vec4 colVal = mix(base, texture2D(grass, vcoord), col.g);
+  //colVal = mix(colVal, texture2D(drygrass, vcoord), col.b);
+  //colVal = mix(colVal, texture2D(cliff, vcoord), col.a);
 
   // Get the base colour from the textures
   // Apply the horizon blend
+  vec4 colVal = texture2D(grass, vcoord);
   vec4 horizon = vec4(0.7, 0.7, 0.9, 1.0);
 
-  vec3 surfaceToLight = normalize(vec3(-0.3, 0.2, 0.6));
+  vec3 surfaceToLight = normalize(vec3(-0.2, -0.5, 0.1));
 
   float lightValue = 0.1 + dot(normal, surfaceToLight);
 
 
   colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
 
-  if (dist > 200.0) {
-    discard;
-  } else if (dist > 120.0) {
-    gl_FragColor = mix(colVal, horizon, (dist - 120.0) / 30.0);
-  } else {
-    gl_FragColor = colVal;
-  }
+  gl_FragColor = colVal;
+ 
 }
 
 |]

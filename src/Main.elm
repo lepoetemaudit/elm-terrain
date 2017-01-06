@@ -58,7 +58,7 @@ init hmap =
 
 defaultPerson : Person
 defaultPerson =
-  { position = vec3 128.01 eyeLevel 48.00
+  { position = vec3 108.05 eyeLevel 44.00
   , velocity = vec3 0 0 0
   , rotation = pi
   , lookVert = 0.0
@@ -167,10 +167,10 @@ fov : Float
 fov = 45
 
 near : Float
-near = 0.10
+near = 0.2
 
 far : Float
-far = 256.0
+far = 280.0
 
 perspective : Int -> Int -> Mat4.Mat4
 perspective w h =
