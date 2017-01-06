@@ -92,8 +92,8 @@ makeSkybox perspective person textures =
 modelMatrix : Person -> Mat4
 modelMatrix person =
   -- ORDERING ??
-   Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
-  |> mul (Mat4.makeRotate person.rotation (vec3 0 1 0.0))
+    Mat4.makeRotate person.rotation (vec3 0 1 0.0)
+    |> mul (Mat4.makeRotate person.lookVert (vec3 1 0 0.0))
 
 
 -- Shaders
@@ -110,7 +110,7 @@ uniform mat4 perspective;
 uniform mat4 model;
 void main () {
     texcoord = vec2(coord.x, 1.0-coord.y);
-    gl_Position = perspective * model * vec4(position * 165.0, 1.0);
+    gl_Position = perspective * model * vec4(position * 100.0, 1.0);
 }
 |]
 

@@ -12,6 +12,7 @@ import Task
 import Set exposing (Set)
 import AnimationFrame
 import Time exposing (Time)
+import Mouse
 
 import Terrain
 import Skybox
@@ -19,7 +20,7 @@ import Types exposing (Person, ProgramFlags)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
-eyeLevel = 3.6
+eyeLevel = 2.6
 
 type alias Model =
   { skybox : Skybox.Model
@@ -27,6 +28,7 @@ type alias Model =
   , heightmap : Array Float
   , person : Person
   , keys : Set Keyboard.KeyCode
+  , mouse : Mouse.Position
   , screen : (Int, Int) }
 
 type alias ScreenDimensions = ( Int, Int )
@@ -38,6 +40,7 @@ type Action
   | TerrainAction Terrain.Action
   | KeyUp Keyboard.KeyCode
   | KeyDown Keyboard.KeyCode
+  | MouseMove Mouse.Position
   | Frame Time
   
 init flags =
@@ -46,6 +49,7 @@ init flags =
     , person = defaultPerson
     , screen = (0, 0)
     , heightmap = flags.terrainHeightMap
+    , mouse = { x = 0, y = 0}
     , keys = Set.empty }
   , Cmd.batch 
       [ Task.attempt 
@@ -81,16 +85,18 @@ fixRot rot =
     rot
 
 
-walk : Float -> { x : Int, y : Int } -> Person -> Person
-walk delta directions person =
+walk : Float -> Set Keyboard.KeyCode -> Person -> Person
+walk delta keys person =
   let
-    p = toRecord person.position
-    rot = toFloat directions.x
-    rotSpeed = delta / 1000.0
+    rotSpeed = delta / 100.0
+    rot = (if (Set.member 65 keys) then -rotSpeed else 0) +
+          (if (Set.member 68 keys) then rotSpeed else 0)
+    forward = (if (Set.member 87 keys) then delta else 0) +
+              (if (Set.member 83 keys) then -delta else 0)    
+    p = toRecord person.position    
     rotVal = person.rotation + (pi / 2.0)
-    forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 4.0)
-    vz = -(sin(rotVal) * forward * 4.0)
+    vx = -(cos(rotVal) * (forward / 2.0))
+    vz = -(sin(rotVal) * (forward / 2.0))
   in
     { person 
       | velocity = vec3 vx (getY person.velocity) vz
@@ -99,7 +105,13 @@ walk delta directions person =
 
 updateFrame : Float -> Model -> Model
 updateFrame delta model =
-  let person = model.person |> gravity delta |> physics model delta in
+  let 
+      (w, h) = model.screen
+      person = model.person 
+               |> mouseLook model.mouse.y w h
+               |> walk delta model.keys 
+               |> gravity delta 
+               |> physics model delta in
     { model | person = person }
 
 update : Action -> Model -> ( Model, Cmd msg )
@@ -117,16 +129,15 @@ update action model =
 
     WindowResize s -> { model | screen = (s.width, s.height) } ! []
 
-    KeyDown key -> { model | keys = model.keys } ! []
+    KeyDown key -> { model | keys = Set.insert key model.keys } ! []
 
-    KeyUp key -> { model | keys = model.keys } ! []
+    KeyUp key -> { model | keys = Set.remove key model.keys } ! []
 
     Frame delta -> updateFrame delta model ! []
 
+    MouseMove pos -> { model | mouse = pos } ! []
+
     NoOp -> model ! []
-    -- Keyboard keys -> nofx { model | keys = keys }
-
-
 
 gravity : Float -> Person -> Person
 gravity dt person =
@@ -153,26 +164,14 @@ physics model dt person =
         position = if p.y < ty then vec3 p.x ty p.z else position
     }
 
-{--
-cameraOutput : Person -> Float -> Element
-cameraOutput person th =
-  let
-    (x, y, z) = toTuple person.position
-    pos =
-      List.map (toString >> formatFloat) [x, y, z, (person.rotation / (pi * 2.0)) * 360.0, th]
-      |> String.join ", "
-  in
-    leftAligned <| Text.monospace <| Text.fromString ("Pos: " ++ pos)
---}
-
 fov : Float
 fov = 45
 
 near : Float
-near = 0.2
+near = 1.0
 
 far : Float
-far = 280.0
+far = 250.0
 
 perspective : Int -> Int -> Mat4.Mat4
 perspective w h =
@@ -205,6 +204,7 @@ debugReadout model =
 view : Model -> Html.Html msg
 view model =
   div [] [ glElement model ]
+         -- , debugReadout model ]
 
 main : Program ProgramFlags Model Action
 main =
@@ -214,6 +214,7 @@ main =
         , subscriptions = (\_ -> Sub.batch [ Window.resizes WindowResize 
                                            , Keyboard.downs KeyDown
                                            , Keyboard.ups KeyUp
-                                           , AnimationFrame.diffs Frame ] )
+                                           , AnimationFrame.diffs Frame
+                                           , Mouse.moves MouseMove ] )
         , update = update
         }

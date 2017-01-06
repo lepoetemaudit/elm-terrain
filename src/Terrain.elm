@@ -118,7 +118,7 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = List.range 0 8
+    rows = List.range 0 12
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
@@ -165,10 +165,9 @@ modelMatrix person =
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
-    -- ORDERING???
-    makeRotate person.lookVert (vec3 1 0 0.0)
-    |> mul (makeTranslate camera)
+    makeTranslate camera
     |> mul (makeRotate person.rotation (vec3 0 1 0.0))
+    |> mul (makeRotate person.lookVert (vec3 1 0 0.0))
 
 
 -- Define the mesh for a terrain slice
@@ -197,20 +196,20 @@ sectorBlock = triangles (List.concatMap (makeTile sectorSize) <| List.range 0 <|
 -- Required external resources
 
 textureNames : List String
-textureNames = ["grass.jpg", "tundra.jpg", "soil.jpg", "heightmap.png"]
+textureNames = ["highland.jpg", "highland.jpg", "highland.jpg", "heightmap.png"]
 
 loadTextures =
   List.map
-    (\t -> Texture.load <| "texture/" ++ t)
+    (\t -> Texture.loadWith 
+              { defaultOptions
+                | magnify = linear
+                , minify = linearMipmapNearest } <| "texture/" ++ t)
     textureNames
   |> Task.sequence
   |> Task.map TexturesLoaded
   |> Debug.log "texture loading: "
   
-
-
 -- Shaders
-
 vertexShader : Shader { position:Vec3, coord:Vec3 }
                       { u | perspective:Mat4
                       , model:Mat4
@@ -238,7 +237,7 @@ varying vec2 hmapPos;
 uniform sampler2D heightmap;
 
 float height(vec2 pos) {
-    vec4 texel = texture2DLod(heightmap, pos, 0.0);
+    vec4 texel = texture2D(heightmap, pos);
     return texel.r * 64.0;
 }
 
@@ -297,10 +296,10 @@ void main () {
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 colVal = texture2D(grass, vcoord);
+  vec4 colVal = texture2D(grass, hmapPos);
   vec4 horizon = vec4(0.7, 0.7, 0.9, 1.0);
 
-  vec3 surfaceToLight = normalize(vec3(-0.2, -0.5, 0.1));
+  vec3 surfaceToLight = normalize(vec3(-0.2, -0.1, 0.1));
 
   float lightValue = 0.1 + dot(normal, surfaceToLight);
 
