@@ -189,12 +189,12 @@ sectorBlock = Triangle (List.concatMap (makeTile sectorSize) <| List.range 0 <| 
 -- Required external resources
 
 textureNames : List String
-textureNames = ["grass.jpg", "soil.jpg", "tundra.jpg", "heightmap.png"]
+textureNames = ["grass.jpg", "soil.jpg", "soil.jpg", "heightmap.png"]
 
 loadTextures : Task.Task Error Action
 loadTextures =
   List.map
-    (\t -> loadTextureWithFilter Linear <| "texture/" ++ t)
+    (\t -> loadTextureWithFilter Nearest <| "texture/" ++ t)
     textureNames
   |> Task.sequence
   |> Task.map TexturesLoaded
