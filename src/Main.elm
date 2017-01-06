@@ -9,6 +9,9 @@ import Math.Matrix4 as Mat4
 import Keyboard
 import String
 import Task
+import Set exposing (Set)
+import AnimationFrame
+import Time exposing (Time)
 
 import Terrain
 import Skybox
@@ -22,7 +25,7 @@ type alias Model =
   { skybox : Skybox.Model
   , terrain : Terrain.Model
   , person : Person
-  , keys : {x: Int, y: Int}
+  , keys : Set Keyboard.KeyCode
   , screen : (Int, Int) }
 
 type alias ScreenDimensions = ( Int, Int )
@@ -32,16 +35,16 @@ type Action
   | SkyboxAction Skybox.Action
   | WindowResize Window.Size
   | TerrainAction Terrain.Action
-  --| SkyboxAction Skybox.Action
-  --| Keyboard {x: Int, y: Int}
-  --| NoOp
+  | KeyUp Keyboard.KeyCode
+  | KeyDown Keyboard.KeyCode
+  | Frame Time
   
 init hmap =
   ( { skybox = Skybox.init
     , terrain = Terrain.init
     , person = defaultPerson
     , screen = (0, 0)
-    , keys = { x = 0, y = 0 } }
+    , keys = Set.empty }
   , Cmd.batch 
       [ Task.attempt 
           ((Result.map SkyboxAction) >> (Result.withDefault NoOp))
@@ -60,9 +63,6 @@ defaultPerson =
   , rotation = pi
   , lookVert = 0.0
   }
-
-type alias Inputs =
-    ( {x:Int, y:Int}, Float, Array Float, (Int, (Int, Int)) )
 
 mouseLook : Int -> Int -> Int -> Person -> Person
 mouseLook mouseY w h person =
@@ -95,6 +95,11 @@ walk delta directions person =
       , rotation = (person.rotation + (rot * rotSpeed)) |> fixRot
     }
 
+updateFrame : Float -> Model -> Model
+updateFrame delta model =
+  let person = model.person in
+    { model | person = { person | rotation = model.person.rotation + delta / 1000.0 } }
+
 update : Action -> Model -> ( Model, Cmd msg )
 update action model =  
   case action of
@@ -109,26 +114,16 @@ update action model =
         { model | terrain = m} ! [cmd]
 
     WindowResize s -> { model | screen = (s.width, s.height) } ! []
-    {--
-    Tick delta dim -> nofx { model | screen = dim
-                                   , person = walk delta model.keys model.person
-                                  |> physics delta } --}
 
-    {--
-    SkyboxAction act ->
-      let (m, fx) = Skybox.update act model.skybox
-      in
-        ( { model | skybox = m}, Effects.map SkyboxAction fx )
+    KeyDown key -> { model | keys = model.keys } ! []
 
-    TerrainAction act ->
-      let (m, fx) = Terrain.update act model.terrain
-      in
-        ( { model | terrain = m}, Effects.map TerrainAction fx ) --}
+    KeyUp key -> { model | keys = model.keys } ! []
 
-
-    -- Keyboard keys -> nofx { model | keys = keys }
+    Frame delta -> updateFrame delta model ! []
 
     NoOp -> model ! []
+    -- Keyboard keys -> nofx { model | keys = keys }
+
 
 
 gravity : Float -> Person -> Person
@@ -214,6 +209,9 @@ main =
     Html.programWithFlags
         { init = init
         , view = view
-        , subscriptions = (\_ -> Window.resizes WindowResize)
+        , subscriptions = (\_ -> Sub.batch [ Window.resizes WindowResize 
+                                           , Keyboard.downs KeyDown
+                                           , Keyboard.ups KeyUp
+                                           , AnimationFrame.diffs Frame ] )
         , update = update
         }
