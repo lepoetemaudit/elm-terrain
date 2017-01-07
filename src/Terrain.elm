@@ -36,7 +36,6 @@ fmod f n =
   in  toFloat (integer % n) + f - toFloat integer
 
 
-
 getHeight : Array Float -> ( Int, Int ) -> Float
 getHeight hmap (x, z) =
   Array.get (x + ((512 - z) * 512)) hmap
@@ -125,7 +124,7 @@ getSectors person =
 view : Mat4 -> Person -> Model -> List Entity
 view perspective camera model =
   case model of
-    [tex, tex2, tex3, hmap] ->
+    [base, detail, hmap] ->
       List.map
         (\sector ->
           (entityWith
@@ -136,9 +135,8 @@ view perspective camera model =
                   }]
                   vertexShader
                   fragmentShader
-                  sectorBlock  { grass=tex
-                               , drygrass=tex2
-                               , cliff=tex3
+                  sectorBlock  { base=base
+                               , detail=detail
                                , heightmap=hmap
                                , texPos=Math.Vector2.vec2 (first sector.texturePos) (second sector.texturePos)
                                , sectorPos=Math.Vector2.vec2 (first sector.position) (second sector.position)
@@ -191,19 +189,25 @@ makeTile sectorSize pos =
     , (bottomLeft,topRight,bottomRight)
     ]
 
-sectorBlock = triangles (List.concatMap (makeTile sectorSize) <| List.range 0 <| (sectorSize*sectorSize)-1)
+sectorBlock : WebGL.Mesh Vertex
+sectorBlock = triangles (List.concatMap (makeTile sectorSize) 
+              <| List.range 0 
+              <| (sectorSize*sectorSize)-1)
 
 -- Required external resources
 
 textureNames : List String
-textureNames = ["highland.jpg", "highland.jpg", "highland.jpg", "heightmap.png"]
+textureNames = ["colourmap.png", "detail.png", "heightmap.png"]
 
+loadTextures : Task.Task Error Action
 loadTextures =
   List.map
     (\t -> Texture.loadWith 
               { defaultOptions
                 | magnify = linear
-                , minify = linearMipmapNearest } <| "texture/" ++ t)
+                , minify = linearMipmapNearest 
+                , horizontalWrap = clampToEdge
+                , verticalWrap = clampToEdge} <| "texture/" ++ t)
     textureNames
   |> Task.sequence
   |> Task.map TexturesLoaded
@@ -213,11 +217,10 @@ loadTextures =
 vertexShader : Shader { position:Vec3, coord:Vec3 }
                       { u | perspective:Mat4
                       , model:Mat4
-                      , heightmap:Texture
+                      , heightmap:Texture                      
                       , texPos:Vec2
                       , sectorPos: Vec2 }
-                      { vcoord:Vec2, dist: Float
-                      , normal: Vec3
+                      { vcoord:Vec2, dist: Float                   
                       , hmapPos:Vec2 }
 vertexShader = [glsl|
 
@@ -232,7 +235,6 @@ uniform vec2 sectorPos;
 varying vec2 vcoord;
 uniform vec2 texPos;
 varying float dist;
-varying vec3 normal;
 varying vec2 hmapPos;
 uniform sampler2D heightmap;
 
@@ -251,63 +253,33 @@ void main () {
   gl_Position = outputPos;
   dist = outputPos.z;
 
-  /* Calculate normal */
-  vec3 off = vec3(1.0 / 512.0, 1.0 / 512.0, 0.0);
-  float hL = height(texelPos.xy - off.xz);
-  float hR = height(texelPos.xy + off.xz);
-  float hD = height(texelPos.xy - off.zy);
-  float hU = height(texelPos.xy + off.zy);
-
-  vec3 n;
-
-  n.x = hL - hR;
-  n.y = hD - hU;
-  n.z = 2.0;
-  n = normalize(n);
-
-  normal = n;
-
   hmapPos = texelPos;
 }
 
 |]
 
-
-fragmentShader : Shader {} { u | grass:Texture, drygrass:Texture, cliff:Texture, heightmap:Texture} { vcoord:Vec2, hmapPos: Vec2, dist: Float, normal: Vec3 }
+fragmentShader : Shader {} { u | base: Texture, detail : Texture, heightmap : Texture} 
+                           { vcoord:Vec2, hmapPos: Vec2, dist: Float }
 fragmentShader = [glsl|
 
 precision mediump float;
-uniform sampler2D grass;
-uniform sampler2D drygrass;
-uniform sampler2D cliff;
+uniform sampler2D base;
+uniform sampler2D detail;
 uniform sampler2D heightmap;
 varying vec2 vcoord;
-varying vec3 normal;
 varying vec2 hmapPos;
 varying float dist;
 
 void main () {
-  //vec4 colVal = vec4(texture2D(heightmap, hmapPos).gba, 1.0);
+  vec4 baseVal = texture2D(base, hmapPos);
+  vec4 detailVal = texture2D(detail, vcoord);
 
-  //vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
-  //vec4 colVal = mix(base, texture2D(grass, vcoord), col.g);
-  //colVal = mix(colVal, texture2D(drygrass, vcoord), col.b);
-  //colVal = mix(colVal, texture2D(cliff, vcoord), col.a);
+  vec4 colVal = mix(baseVal, detailVal, 0.2);
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 colVal = texture2D(grass, hmapPos);
-  vec4 horizon = vec4(0.7, 0.7, 0.9, 1.0);
-
-  vec3 surfaceToLight = normalize(vec3(-0.2, -0.1, 0.1));
-
-  float lightValue = 0.1 + dot(normal, surfaceToLight);
-
-
-  colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
-
-  gl_FragColor = colVal;
  
+  gl_FragColor = colVal;
 }
 
 |]

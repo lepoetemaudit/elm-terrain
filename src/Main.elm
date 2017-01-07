@@ -95,8 +95,8 @@ walk delta keys person =
               (if (Set.member 83 keys) then -delta else 0)    
     p = toRecord person.position    
     rotVal = person.rotation + (pi / 2.0)
-    vx = -(cos(rotVal) * (forward / 2.0))
-    vz = -(sin(rotVal) * (forward / 2.0))
+    vx = -(cos(rotVal) * (forward / 3.0))
+    vz = -(sin(rotVal) * (forward / 3.0))
   in
     { person 
       | velocity = vec3 vx (getY person.velocity) vz
@@ -127,7 +127,9 @@ update action model =
       in
         { model | terrain = m} ! [cmd]
 
-    WindowResize s -> { model | screen = (s.width, s.height) } ! []
+    WindowResize s -> { model | screen = (s.width, s.height)
+                              , mouse = { x = s.width // 2 
+                                        , y = s.height // 2 } } ! []
 
     KeyDown key -> { model | keys = Set.insert key model.keys } ! []
 
@@ -171,7 +173,7 @@ near : Float
 near = 1.0
 
 far : Float
-far = 250.0
+far = 260.0
 
 perspective : Int -> Int -> Mat4.Mat4
 perspective w h =

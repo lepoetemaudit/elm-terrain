@@ -19,9 +19,9 @@ textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
 loadTextures : Task.Task Error Action
 loadTextures =
-  (List.map (\t -> load
- 
-                         ("texture/miramar_" ++ t ++ ".jpeg"))
+  (List.map (\t -> loadWith { defaultOptions | horizontalWrap = clampToEdge, 
+                                               verticalWrap = clampToEdge }
+                            ("texture/miramar_" ++ t ++ ".jpeg"))
      textures)
   |> Task.sequence
   |> Task.map TexturesLoaded

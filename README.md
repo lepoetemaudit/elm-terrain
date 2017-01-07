@@ -7,13 +7,20 @@ See http://lepoetemaudit.github.io/elm-terrain
 
 # Running locally
 
-Clone the repository and run `make` followed by `make serve`, then navigate to http://localhost:4079/terrain.html
+Clone the repository and run `make` followed by `make serve`, then navigate 
+to http://localhost:4079/terrain.html
 
-Uses a slightly modified version of https://github.com/elm-community/elm-webgl found in `./libs`, mainly to allow setting
-`glClearColor` and to correctly set desired texture properties (such as mipmap filters)
+# Potential improvements
+
+- Display sections of the terrain at lower LOD - this would allow showing
+  much greater terrain distances
+- Add different detail and splat textures
+- Water
+- Vegetation
+- Better mouselook
 
 # Credits
 
-Textures are from http://spiralgraphics.biz/packs/terrain_lush/
-
-The heightmap is from http://terrain.party and is of Derwentwater in the Lake District, England, with some fiddling and smoothing in Gimp.
+Textures are from http://opengameart.org/content/miramar-skybox for the skybox,
+and http://seamless-pixels.blogspot.co.uk/ for the detail texture. The heightmap
+was generated using L3DT - https://www.bundysoft.com/L3DT/
