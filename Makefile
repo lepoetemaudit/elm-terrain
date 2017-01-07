@@ -1,5 +1,3 @@
-textures = build/texture/grass.jpg build/texture/soil.jpg build/texture/heightmap.png
-
 default: build output/elm.js output/terrain.html
 	cp -r src/texture build
 	@echo "\n*** Run 'make serve' and visit http://localhost:4079/terrain.html in your browser ***"
