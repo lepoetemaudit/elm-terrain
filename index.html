@@ -19,10 +19,10 @@
 
         // Use only the red channel for now
         for (var i=0; i < 512 * 512 * 4; i+=4) {
-            hmapData.push(data[i] / 16.0);
+            hmapData.push(data[i] / 4.0);
         }
 
-        var app = Elm.fullscreen(Elm.Main, { terrainHeightMap: hmapData });
+        var app = Elm.Main.fullscreen({ terrainHeightMap: hmapData });
     }
     </script>
 </body>
