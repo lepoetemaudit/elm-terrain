@@ -1,14 +1,31 @@
-module Terrain (..) where
+module Terrain exposing (..)
+
+import Array exposing (Array)
+import Task
 
 import Math.Vector2 exposing (Vec2)
 import Math.Vector3 exposing (..)
 import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
-import WebGL exposing (..)
-import Array exposing (Array)
+import WebGL exposing (Shader, triangles, entity, entityWith, Entity)
+import WebGL.Settings as Settings
+import WebGL.Texture as Texture exposing (..)
+import WebGL.Settings.DepthTest as DepthTest
+import Tuple exposing (first, second)
 
 import Types exposing (Person)
 
+
+type Action = TexturesLoaded (List Texture)
+type alias Model = List Texture
+
+init : Model
+init = []
+
+update a model =
+  case a of
+    TexturesLoaded texes ->
+      texes ! []
 
 sectorSize : number
 sectorSize = 32
@@ -17,7 +34,6 @@ fmod : Float -> Int -> Float
 fmod f n =
   let integer = floor f
   in  toFloat (integer % n) + f - toFloat integer
-
 
 
 getHeight : Array Float -> ( Int, Int ) -> Float
@@ -35,7 +51,7 @@ getTerrainHeight (x, _, z) hmap =
                            , gh (x2, z1)
                            , gh (x1, z2)
                            , gh (x2, z2) )
-    in
+  in
 
       (h11 * ((toFloat x2) - x) * ((toFloat z2) - z) +
        h21 * (x - (toFloat x1)) * ((toFloat z2) - z) +
@@ -71,7 +87,7 @@ makeSector rowNum person fov colNum =
 
     texturePos = getSectorPos (x + pX) (z + pZ)
     userSector = getSectorPos pX pZ
-    sectorPos = (fst texturePos - fst userSector, snd texturePos - snd userSector)
+    sectorPos = (first texturePos - first userSector, second texturePos - second userSector)
 
     (tx, ty) = texturePos
 
@@ -90,7 +106,7 @@ getSectorRow rowNum person fov =
   let
       length = (toFloat rowNum) * sectorSize
       width = (cos fov) * length
-      cols = [-1..((width / sectorSize) * 2.1 |> round)+1]
+      cols = List.range -1 <| ((width / sectorSize) * 2.1 |> round)+1
   in
       List.filterMap (makeSector rowNum person fov) cols
 
@@ -101,25 +117,31 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = [0..8]
+    rows = List.range 0 12
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
-view : List Texture -> Mat4 -> Person -> List Renderable
-view textures perspective camera =
-  case textures of
-    [tex, tex2, tex3, hmap] ->
+view : Mat4 -> Person -> Model -> List Entity
+view perspective camera model =
+  case model of
+    [base, detail, hmap] ->
       List.map
         (\sector ->
-          (render vertexShader
+          (entityWith
+                  [ Settings.cullFace Settings.back
+                  , DepthTest.less { write = True
+                                   , near = 0
+                                   , far = 1
+                  }]
+                  vertexShader
                   fragmentShader
-                  sectorBlock  { grass=tex
-                               , drygrass=tex2
-                               , cliff=tex3
+                  sectorBlock  { base=base
+                               , detail=detail
                                , heightmap=hmap
-                               , texPos=Math.Vector2.vec2 (fst sector.texturePos) (snd sector.texturePos)
-                               , sectorPos=Math.Vector2.vec2 (fst sector.position) (snd sector.position)
-                               , perspective=perspective }))
+                               , texPos=Math.Vector2.vec2 (first sector.texturePos) (second sector.texturePos)
+                               , sectorPos=Math.Vector2.vec2 (first sector.position) (second sector.position)
+                               , perspective=perspective
+                               , model=modelMatrix camera}))
         (getSectors camera)
 
     _ -> []
@@ -133,26 +155,17 @@ getTexPos person =
     Math.Vector2.vec2 ((toFloat (floor x)) + 0.0)
                       ((toFloat (floor z)) + 0.0)
 
-textures : Signal.Mailbox (List Texture)
-textures = Signal.mailbox []
-
 -- VIEW
 
--- TODO - we shouldn't be concerned with the perspective matrix,
--- only the model matrix
-perspective : (Int,Int) -> Person -> Mat4
-perspective (w,h) person =
+modelMatrix : Person -> Mat4
+modelMatrix person =
   let
     (x, y, z) = Math.Vector3.negate person.position |> toTuple
     camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
   in
-    (makePerspective 45 (toFloat w / toFloat h) 0.10 255)
-    `mul` makeRotate person.lookVert (vec3 1 0 0.0)
-    `mul` makeRotate person.rotation (vec3 0 1 0.0)
-    `mul` makeTranslate camera
-
-
-
+    makeTranslate camera
+    |> mul (makeRotate person.rotation (vec3 0 1 0.0))
+    |> mul (makeRotate person.lookVert (vec3 1 0 0.0))
 
 
 -- Define the mesh for a terrain slice
@@ -161,7 +174,6 @@ type alias Vertex =
     { position : Vec3
     , coord : Vec3
     }
-
 
 makeTile : Int -> Int -> List (Vertex, Vertex, Vertex)
 makeTile sectorSize pos =
@@ -177,17 +189,38 @@ makeTile sectorSize pos =
     , (bottomLeft,topRight,bottomRight)
     ]
 
-sectorBlock : Drawable Vertex
-sectorBlock = Triangle (List.concatMap (makeTile sectorSize) [0..(sectorSize*sectorSize)-1])
--- Shaders
+sectorBlock : WebGL.Mesh Vertex
+sectorBlock = triangles (List.concatMap (makeTile sectorSize) 
+              <| List.range 0 
+              <| (sectorSize*sectorSize)-1)
 
+-- Required external resources
+
+textureNames : List String
+textureNames = ["colourmap.png", "detail.png", "heightmap.png"]
+
+loadTextures : Task.Task Error Action
+loadTextures =
+  List.map
+    (\t -> Texture.loadWith 
+              { defaultOptions
+                | magnify = linear
+                , minify = linearMipmapNearest 
+                , horizontalWrap = clampToEdge
+                , verticalWrap = clampToEdge} <| "texture/" ++ t)
+    textureNames
+  |> Task.sequence
+  |> Task.map TexturesLoaded
+  |> Debug.log "texture loading: "
+  
+-- Shaders
 vertexShader : Shader { position:Vec3, coord:Vec3 }
                       { u | perspective:Mat4
-                      , heightmap:Texture
+                      , model:Mat4
+                      , heightmap:Texture                      
                       , texPos:Vec2
                       , sectorPos: Vec2 }
-                      { vcoord:Vec2, dist: Float
-                      , normal: Vec3
+                      { vcoord:Vec2, dist: Float                   
                       , hmapPos:Vec2 }
 vertexShader = [glsl|
 
@@ -197,16 +230,16 @@ attribute vec3 position;
 attribute vec3 coord;
 
 uniform mat4 perspective;
+uniform mat4 model;
 uniform vec2 sectorPos;
 varying vec2 vcoord;
 uniform vec2 texPos;
 varying float dist;
-varying vec3 normal;
 varying vec2 hmapPos;
 uniform sampler2D heightmap;
 
 float height(vec2 pos) {
-    vec4 texel = texture2DLod(heightmap, pos, 0.0);
+    vec4 texel = texture2D(heightmap, pos);
     return texel.r * 64.0;
 }
 
@@ -215,72 +248,38 @@ void main () {
 
   float vHeight = height(texelPos);
   vec2 pos = position.xz + sectorPos;
-  vec4 outputPos = perspective * vec4(pos.x, vHeight, pos.y, 1.0);
+  vec4 outputPos = perspective * model * vec4(pos.x, vHeight, pos.y, 1.0);
   vcoord = coord.xy;
   gl_Position = outputPos;
   dist = outputPos.z;
-
-  /* Calculate normal */
-  vec3 off = vec3(1.0 / 512.0, 1.0 / 512.0, 0.0);
-  float hL = height(texelPos.xy - off.xz);
-  float hR = height(texelPos.xy + off.xz);
-  float hD = height(texelPos.xy - off.zy);
-  float hU = height(texelPos.xy + off.zy);
-
-  vec3 n;
-
-  n.x = hL - hR;
-  n.y = hD - hU;
-  n.z = 2.0;
-  n = normalize(n);
-
-  normal = n;
 
   hmapPos = texelPos;
 }
 
 |]
 
-
-fragmentShader : Shader {} { u | grass:Texture, drygrass:Texture, cliff:Texture, heightmap:Texture} { vcoord:Vec2, hmapPos: Vec2, dist: Float, normal: Vec3 }
+fragmentShader : Shader {} { u | base: Texture, detail : Texture, heightmap : Texture} 
+                           { vcoord:Vec2, hmapPos: Vec2, dist: Float }
 fragmentShader = [glsl|
 
 precision mediump float;
-uniform sampler2D grass;
-uniform sampler2D drygrass;
-uniform sampler2D cliff;
+uniform sampler2D base;
+uniform sampler2D detail;
 uniform sampler2D heightmap;
 varying vec2 vcoord;
-varying vec3 normal;
 varying vec2 hmapPos;
 varying float dist;
 
 void main () {
-  vec4 col = texture2D(heightmap, hmapPos);
+  vec4 baseVal = texture2D(base, hmapPos);
+  vec4 detailVal = texture2D(detail, vcoord);
 
-  vec4 base = vec4(0.0, 0.0, 0.0, 1.0);
-  vec4 colVal = mix(base, texture2D(grass, vcoord), col.g);
-  colVal = mix(colVal, texture2D(drygrass, vcoord), col.b);
-  colVal = mix(colVal, texture2D(cliff, vcoord), col.a);
+  vec4 colVal = mix(baseVal, detailVal, 0.2);
 
   // Get the base colour from the textures
   // Apply the horizon blend
-  vec4 horizon = vec4(0.7, 0.7, 0.9, 1.0);
-
-  vec3 surfaceToLight = normalize(vec3(-0.3, 0.2, 0.6));
-
-  float lightValue = 0.1 + dot(normal, surfaceToLight);
-
-
-  colVal = colVal * vec4(lightValue, lightValue, lightValue, 1.0);
-
-  if (dist > 200.0) {
-    discard;
-  } else if (dist > 120.0) {
-    gl_FragColor = mix(colVal, horizon, (dist - 120.0) / 30.0);
-  } else {
-    gl_FragColor = colVal;
-  }
+ 
+  gl_FragColor = colVal;
 }
 
 |]

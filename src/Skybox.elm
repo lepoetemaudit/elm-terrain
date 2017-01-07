@@ -1,30 +1,33 @@
-module Skybox where
+module Skybox exposing (..)
 
 import Task
-import Signal
 
-import WebGL exposing (..)
+import WebGL exposing (Entity, Shader, entity, entityWith)
+import WebGL.Texture exposing (..)
+import WebGL.Settings as Settings
 import Math.Vector2 exposing (Vec2, vec2)
 import Math.Vector3 exposing (vec3, Vec3)
 import Math.Matrix4 as Mat4 exposing (Mat4, mul)
 
+
 import Types exposing (Person)
 
-textures : Signal.Mailbox (List Texture)
-textures = Signal.mailbox []
+type Action = TexturesLoaded (List Texture)
 
-getTextures =
-  Task.sequence
-      [ loadTextureWithFilter Linear "texture/miramar_lf.jpeg" -- left
-      , loadTextureWithFilter Linear "texture/miramar_up.jpeg" -- ignore
-      , loadTextureWithFilter Linear "texture/miramar_ft.jpeg" -- front & good (flip?)
-      , loadTextureWithFilter Linear "texture/miramar_bk.jpeg" -- back
-      , loadTextureWithFilter Linear "texture/miramar_rt.jpeg" -- right & good (flip?)
-      , loadTextureWithFilter Linear "texture/miramar_dn.jpeg" -- ignore
-      ]
-      `Task.andThen` (\tex -> Signal.send textures.address tex)
+textures : List String
+textures = ["lf", "up", "ft", "bk", "rt", "dn"]
 
-cube : List (Drawable Vertex)
+loadTextures : Task.Task Error Action
+loadTextures =
+  (List.map (\t -> loadWith { defaultOptions | horizontalWrap = clampToEdge, 
+                                               verticalWrap = clampToEdge }
+                            ("texture/miramar_" ++ t ++ ".jpeg"))
+     textures)
+  |> Task.sequence
+  |> Task.map TexturesLoaded
+  |> Debug.log "skybox textures"
+
+
 cube =
   let
     rft = vec3  1  1  1   -- right, front, top
@@ -36,7 +39,7 @@ cube =
     lfb = vec3 -1  1 -1
     lbb = vec3 -1 -1 -1
 
-  in List.map Triangle
+  in List.map WebGL.triangles
       [ face rft rfb rbb rbt   -- right
       , face rfb rft lft lfb   -- front (ignore)
       , face lft rft rbt lbt   -- top (actual front)
@@ -62,29 +65,41 @@ type alias Vertex =
     , coord : Vec2
     }
 
-makeSkybox : Mat4 -> List Texture -> List Renderable
-makeSkybox perspective textures =
+type alias Model = List Texture
+
+init : Model
+init = []
+
+update : Action -> a -> ( List Texture, Cmd msg )
+update msg model =
+  case msg of
+    TexturesLoaded tex -> tex ! []  
+
+makeSkybox : Mat4 -> Person -> Model -> List Entity
+makeSkybox perspective person textures =
   List.map2
     (\tex tris ->
-      (renderWithConfig
-              []
+      (entityWith [Settings.cullFace Settings.back]
               vertexShader
               fragmentShader
               tris
-              { facetex = tex, perspective = perspective } ) )
+              { facetex = tex
+              , perspective = perspective
+              , model = modelMatrix person } ) )
     textures cube
 
--- TODO - this should return a model matrix, not a perspective one
-perspective : (Int,Int) -> Person -> Mat4
-perspective (w,h) person =
-  (Mat4.makePerspective 45 (toFloat w / toFloat h) 0.10 255)
-  `mul` Mat4.makeRotate person.lookVert (vec3 1 0 0.0)
-  `mul` Mat4.makeRotate person.rotation (vec3 0 1 0.0)
+
+modelMatrix : Person -> Mat4
+modelMatrix person =
+  -- ORDERING ??
+    Mat4.makeRotate person.rotation (vec3 0 1 0.0)
+    |> mul (Mat4.makeRotate person.lookVert (vec3 1 0 0.0))
+
 
 -- Shaders
 
 vertexShader : Shader { attr | position:Vec3, coord: Vec2 }
-                      {u | facetex: Texture, perspective: Mat4} { texcoord: Vec2}
+                      {u | facetex: Texture, perspective: Mat4, model: Mat4} { texcoord: Vec2}
 vertexShader = [glsl|
 precision mediump float;
 
@@ -92,9 +107,10 @@ attribute vec3 position;
 attribute vec2 coord;
 varying vec2 texcoord;
 uniform mat4 perspective;
+uniform mat4 model;
 void main () {
     texcoord = vec2(coord.x, 1.0-coord.y);
-    gl_Position = perspective * vec4(position * 145.0, 1.0);
+    gl_Position = perspective * model * vec4(position * 100.0, 1.0);
 }
 |]
 

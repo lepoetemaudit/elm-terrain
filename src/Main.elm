@@ -1,40 +1,78 @@
 import Array exposing (Array)
 import Window
+import Html exposing (div, text)
+import Html.Attributes exposing (style)
 
 import WebGL exposing (..)
 import Math.Vector3 as Vector3 exposing (toTuple, vec3, toRecord, add, getY)
+import Math.Matrix4 as Mat4
 import Keyboard
-import Graphics.Element exposing (..)
-import Text
-import Mouse
 import String
-import Time exposing (fps)
-import Task exposing (Task)
+import Task
+import Set exposing (Set)
+import AnimationFrame
+import Time exposing (Time)
+import Mouse
 
 import Terrain
 import Skybox
-import Types exposing (Person)
+import Types exposing (Person, ProgramFlags)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
-eyeLevel = 1.6
+eyeLevel = 2.6
+
+type alias Model =
+  { skybox : Skybox.Model
+  , terrain : Terrain.Model
+  , heightmap : Array Float
+  , person : Person
+  , keys : Set Keyboard.KeyCode
+  , mouse : Mouse.Position
+  , screen : (Int, Int) }
+
+type alias ScreenDimensions = ( Int, Int )
+
+type Action 
+  = NoOp
+  | SkyboxAction Skybox.Action
+  | WindowResize Window.Size
+  | TerrainAction Terrain.Action
+  | KeyUp Keyboard.KeyCode
+  | KeyDown Keyboard.KeyCode
+  | MouseMove Mouse.Position
+  | Frame Time
+  
+init flags =
+  ( { skybox = Skybox.init
+    , terrain = Terrain.init
+    , person = defaultPerson
+    , screen = (0, 0)
+    , heightmap = flags.terrainHeightMap
+    , mouse = { x = 0, y = 0}
+    , keys = Set.empty }
+  , Cmd.batch 
+      [ Task.attempt 
+          ((Result.map SkyboxAction) >> (Result.withDefault NoOp))
+          Skybox.loadTextures  
+      , Task.attempt 
+          ((Result.map TerrainAction) >> (Result.withDefault NoOp))
+          Terrain.loadTextures  
+      , Task.perform WindowResize Window.size
+      ]
+  )
 
 defaultPerson : Person
 defaultPerson =
-  { position = vec3 128.01 eyeLevel 48.00
-  , velocity = vec3 0 0 0
+  { position = vec3 108.05 eyeLevel 44.00
+  , velocity = vec3 0.0 0 5.0
   , rotation = pi
   , lookVert = 0.0
   }
 
-
-type alias Inputs =
-    ( Bool, {x:Int, y:Int}, Float, Array Float, (Int, (Int, Int)) )
-
 mouseLook : Int -> Int -> Int -> Person -> Person
 mouseLook mouseY w h person =
   { person | lookVert = -(pi/2.0) + ((toFloat mouseY) / (toFloat h)) * pi  }
-
 
 -- TODO - replace this with fmod
 fixRot : Float -> Float
@@ -47,31 +85,61 @@ fixRot rot =
     rot
 
 
-walk : { x : Int, y : Int } -> Person -> Person
-walk directions person =
+walk : Float -> Set Keyboard.KeyCode -> Person -> Person
+walk delta keys person =
   let
-    p = toRecord person.position
-    rot = toFloat directions.x
+    rotSpeed = delta / 100.0
+    rot = (if (Set.member 65 keys) then -rotSpeed else 0) +
+          (if (Set.member 68 keys) then rotSpeed else 0)
+    forward = (if (Set.member 87 keys) then delta else 0) +
+              (if (Set.member 83 keys) then -delta else 0)    
+    p = toRecord person.position    
     rotVal = person.rotation + (pi / 2.0)
-    forward = toFloat directions.y
-    vx = -(cos(rotVal) * forward * 4.0)
-    vz = -(sin(rotVal) * forward * 4.0)
-    in
-      { person |
-          velocity = vec3 vx (getY person.velocity) vz,
-          rotation = (person.rotation + (rot / 40.0)) |> fixRot
-      }
+    vx = -(cos(rotVal) * (forward / 3.0))
+    vz = -(sin(rotVal) * (forward / 3.0))
+  in
+    { person 
+      | velocity = vec3 vx (getY person.velocity) vz
+      , rotation = (person.rotation + (rot * rotSpeed)) |> fixRot
+    }
 
--- UPDATE
+updateFrame : Float -> Model -> Model
+updateFrame delta model =
+  let 
+      (w, h) = model.screen
+      person = model.person 
+               |> mouseLook model.mouse.y w h
+               |> walk delta model.keys 
+               |> gravity delta 
+               |> physics model delta in
+    { model | person = person }
 
-update : Inputs -> Person -> Person
-update (isJumping, directions, dt, th, (mouseY, (w, h))) person =
-  person
-    |> walk directions
-    |> mouseLook mouseY w h
-    |> gravity dt
-    |> physics dt th
+update : Action -> Model -> ( Model, Cmd msg )
+update action model =  
+  case action of
+    SkyboxAction a -> 
+      let (m, cmd) = Skybox.update a model.skybox
+      in 
+        { model | skybox = m } ! [cmd]
 
+    TerrainAction a ->
+      let (m, cmd) = Terrain.update a model.terrain
+      in
+        { model | terrain = m} ! [cmd]
+
+    WindowResize s -> { model | screen = (s.width, s.height)
+                              , mouse = { x = s.width // 2 
+                                        , y = s.height // 2 } } ! []
+
+    KeyDown key -> { model | keys = Set.insert key model.keys } ! []
+
+    KeyUp key -> { model | keys = Set.remove key model.keys } ! []
+
+    Frame delta -> updateFrame delta model ! []
+
+    MouseMove pos -> { model | mouse = pos } ! []
+
+    NoOp -> model ! []
 
 gravity : Float -> Person -> Person
 gravity dt person =
@@ -85,92 +153,70 @@ gravity dt person =
           velocity = vec3 v.x (v.y - 0.25 * dt) v.z
       }
 
-physics : Float -> Array Float -> Person -> Person
-physics dt th person =
+physics : Model -> Float -> Person -> Person
+physics model dt person =
   let
     position =
-      person.position `add` Vector3.scale dt person.velocity
+      add person.position <| Vector3.scale (dt / 500.0) person.velocity
     p = toRecord position
-    ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) th
+    ty = eyeLevel + Terrain.getTerrainHeight (toTuple position) model.heightmap
+    
   in
     { person |
         position = if p.y < ty then vec3 p.x ty p.z else position
     }
 
+fov : Float
+fov = 45
 
-person : Signal Person
-person =
-  Signal.foldp update defaultPerson inputs
+near : Float
+near = 1.0
 
+far : Float
+far = 260.0
 
-terrainTexMb : Signal.Mailbox (List Texture)
-terrainTexMb = Terrain.textures
+perspective : Int -> Int -> Mat4.Mat4
+perspective w h =
+  Mat4.makePerspective fov (toFloat w / toFloat h) near far
 
-port fetchTextures : Task WebGL.Error ()
-port fetchTextures =
-  Task.sequence
-    [ loadTextureWithFilter Linear "texture/grass.jpg"
-    , loadTextureWithFilter Linear "texture/soil.jpg"
-    , loadTextureWithFilter Linear "texture/tundra.jpg"
-    , loadTextureWithFilter Linear "texture/attributemap.png"
-    ]
-    `Task.andThen` (\tex -> Signal.send terrainTexMb.address tex)
-
-port skyboxTextures : Task WebGL.Error()
-port skyboxTextures = Skybox.getTextures
-
-port terrainHeightMap : Signal (Array Float)
-
-
-inputs : Signal Inputs
-inputs =
+glElement model =
   let
-    dt = Signal.map (\t -> t/500) (fps 60)
+    (w, h) = model.screen
+    perspectiveMatrix = perspective w h
+    skybox = Skybox.makeSkybox perspectiveMatrix model.person model.skybox
+    terrain = Terrain.view perspectiveMatrix model.person model.terrain 
   in
-    Signal.map5
-      (,,,,)
-      Keyboard.space
-      (Signal.merge Keyboard.wasd Keyboard.arrows)
-      dt
-      terrainHeightMap
-      (Signal.map2 (,) Mouse.y Window.dimensions)
-      |> Signal.sampleOn dt
+    WebGL.toHtml [ Html.Attributes.width w
+                 , Html.Attributes.height h ] 
+                 (skybox ++ terrain)
 
-view : (Int,Int) -> List Renderable -> Person -> Float -> Element
-view (w,h) entities person th =
-  layers
-    [ webgl (w,h) entities
-    , container w 100 (midLeftAt (absolute 10) (relative 0.1))
-                      (cameraOutput person th)
-    ]
+debugReadout : Model -> Html.Html a
+debugReadout model =
+  div
+    [ style
+        [ ("position", "absolute")
+        , ("top", "0")
+        , ("left", "0") ] ]
 
+    [ text <| "screen=" ++ (toString model.screen) ++
+      "; keys=" ++ (toString model.keys) ++
+      "; camera=" ++ (toString model.person) ++
+      "; terrain=" ++ (toString (List.length model.terrain))]
 
+view : Model -> Html.Html msg
+view model =
+  div [] [ glElement model ]
+         -- , debugReadout model ]
 
-cameraOutput : Person -> Float -> Element
-cameraOutput person th =
-  let
-    (x, y, z) = toTuple person.position
-    pos =
-      List.map (toString >> formatFloat) [x, y, z, (person.rotation / (pi * 2.0)) * 360.0, th]
-      |> String.join ", "
-  in
-    leftAligned <| Text.monospace <| Text.fromString ("Pos: " ++ pos)
-
-main : Signal Element
+main : Program ProgramFlags Model Action
 main =
-  let
-    skyTexMb = Skybox.textures
-    persp = (Signal.map2 Terrain.perspective Window.dimensions person)
-    skypersp = (Signal.map2 Skybox.perspective Window.dimensions person)
-    entities =
-      Signal.map2
-        (++)
-        (Signal.map2 Skybox.makeSkybox skypersp skyTexMb.signal)
-        (Signal.map3 Terrain.view terrainTexMb.signal persp person)
-
-    terrain =
-      Signal.map2 Terrain.getTerrainHeight
-        (Signal.map (.position >> toTuple) person)
-        terrainHeightMap
-  in
-    Signal.map4 view Window.dimensions entities person terrain
+    Html.programWithFlags
+        { init = init
+        , view = view
+        , subscriptions = (\_ -> Sub.batch [ Window.resizes WindowResize 
+                                           , Keyboard.downs KeyDown
+                                           , Keyboard.ups KeyUp
+                                           , AnimationFrame.diffs Frame
+                                           , Mouse.moves MouseMove ] )
+        , update = update
+        }

@@ -1,4 +1,4 @@
-module Utils (..) where
+module Utils exposing (..)
 
 import String exposing (fromChar)
 
@@ -13,4 +13,4 @@ formatFloat val =
       ((str ++ String.fromChar el), (dist+1))
     else (str, dist)
     ) ("", -1) val
-    |> fst
+    |> Tuple.first
