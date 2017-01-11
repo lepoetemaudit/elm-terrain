@@ -150,7 +150,7 @@ gravity dt person =
       v = toRecord person.velocity
     in
       { person |
-          velocity = vec3 v.x (v.y - 0.25 * dt) v.z
+          velocity = vec3 v.x (v.y - 0.0025 * dt) v.z
       }
 
 physics : Model -> Float -> Person -> Person
@@ -170,7 +170,7 @@ fov : Float
 fov = 45
 
 near : Float
-near = 1.0
+near = 0.5
 
 far : Float
 far = 512.0

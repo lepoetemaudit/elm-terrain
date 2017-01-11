@@ -197,7 +197,7 @@ sectorBlock = triangles (List.concatMap (makeTile sectorSize)
 -- Required external resources
 
 textureNames : List String
-textureNames = ["colourmap.png", "detail.png", "heightmap.png"]
+textureNames = ["colourmap.jpg", "detail.jpg", "heightmap.png"]
 
 loadTextures : Task.Task Error Action
 loadTextures =
