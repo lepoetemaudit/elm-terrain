@@ -28,7 +28,7 @@ update a model =
       texes ! []
 
 sectorSize : number
-sectorSize = 32
+sectorSize = 64
 
 fmod : Float -> Int -> Float
 fmod f n =
@@ -117,7 +117,7 @@ getSectors person =
     (x, _, z) = toTuple person.position
     -- Get initial sector position
     (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = List.range 0 12
+    rows = List.range 0 8
   in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
 
@@ -272,14 +272,20 @@ varying float dist;
 
 void main () {
   vec4 baseVal = texture2D(base, hmapPos);
-  vec4 detailVal = texture2D(detail, vcoord);
 
-  vec4 colVal = mix(baseVal, detailVal, 0.2);
-
-  // Get the base colour from the textures
-  // Apply the horizon blend
- 
-  gl_FragColor = colVal;
+  // Add detail tex if close enough
+  if (dist < 48.0) {
+    vec4 detailVal = texture2D(detail, vcoord);
+    vec4 colVal = mix(baseVal, detailVal, 0.2);
+    gl_FragColor = colVal;
+  } else if (dist < 64.0) {
+    vec4 detailVal = texture2D(detail, vcoord);
+    float fade = 0.2 - ((dist - 48.0) / 80.0);
+    vec4 colVal = mix(baseVal, detailVal, fade);
+    gl_FragColor = colVal;
+  } else {
+    gl_FragColor = baseVal;
+  }
 }
 
 |]

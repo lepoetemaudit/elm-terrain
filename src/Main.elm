@@ -20,7 +20,7 @@ import Types exposing (Person, ProgramFlags)
 import Utils exposing (formatFloat)
 
 eyeLevel : Float
-eyeLevel = 2.6
+eyeLevel = 1.8
 
 type alias Model =
   { skybox : Skybox.Model
@@ -64,10 +64,10 @@ init flags =
 
 defaultPerson : Person
 defaultPerson =
-  { position = vec3 108.05 eyeLevel 44.00
+  { position = vec3 196.05 eyeLevel 218.00
   , velocity = vec3 0.0 0 5.0
-  , rotation = pi
-  , lookVert = 0.0
+  , rotation = 6.18
+  , lookVert = 0.3
   }
 
 mouseLook : Int -> Int -> Int -> Person -> Person
@@ -173,7 +173,7 @@ near : Float
 near = 1.0
 
 far : Float
-far = 260.0
+far = 512.0
 
 perspective : Int -> Int -> Mat4.Mat4
 perspective w h =
@@ -206,7 +206,7 @@ debugReadout model =
 view : Model -> Html.Html msg
 view model =
   div [] [ glElement model ]
-         -- , debugReadout model ]
+         --, debugReadout model ]
 
 main : Program ProgramFlags Model Action
 main =
