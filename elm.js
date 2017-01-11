@@ -12550,14 +12550,14 @@ var _lepoetemaudit$elm_terrain$Types$Person = F4(
 		return {position: a, velocity: b, rotation: c, lookVert: d};
 	});
 
-var _lepoetemaudit$elm_terrain$Terrain$fragmentShader = {'src': '\n\nprecision mediump float;\nuniform sampler2D base;\nuniform sampler2D detail;\nuniform sampler2D heightmap;\nvarying vec2 vcoord;\nvarying vec2 hmapPos;\nvarying float dist;\n\nvoid main () {\n  vec4 baseVal = texture2D(base, hmapPos);\n  vec4 detailVal = texture2D(detail, vcoord);\n\n  vec4 colVal = mix(baseVal, detailVal, 0.2);\n\n  // Get the base colour from the textures\n  // Apply the horizon blend\n \n  gl_FragColor = colVal;\n}\n\n'};
+var _lepoetemaudit$elm_terrain$Terrain$fragmentShader = {'src': '\n\nprecision mediump float;\nuniform sampler2D base;\nuniform sampler2D detail;\nuniform sampler2D heightmap;\nvarying vec2 vcoord;\nvarying vec2 hmapPos;\nvarying float dist;\n\nvoid main () {\n  vec4 baseVal = texture2D(base, hmapPos);\n\n  // Add detail tex if close enough\n  if (dist < 48.0) {\n    vec4 detailVal = texture2D(detail, vcoord);\n    vec4 colVal = mix(baseVal, detailVal, 0.2);\n    gl_FragColor = colVal;\n  } else if (dist < 64.0) {\n    vec4 detailVal = texture2D(detail, vcoord);\n    float fade = 0.2 - ((dist - 48.0) / 80.0);\n    vec4 colVal = mix(baseVal, detailVal, fade);\n    gl_FragColor = colVal;\n  } else {\n    gl_FragColor = baseVal;\n  }\n}\n\n'};
 var _lepoetemaudit$elm_terrain$Terrain$vertexShader = {'src': '\n\nprecision mediump float;\n\nattribute vec3 position;\nattribute vec3 coord;\n\nuniform mat4 perspective;\nuniform mat4 model;\nuniform vec2 sectorPos;\nvarying vec2 vcoord;\nuniform vec2 texPos;\nvarying float dist;\nvarying vec2 hmapPos;\nuniform sampler2D heightmap;\n\nfloat height(vec2 pos) {\n    vec4 texel = texture2D(heightmap, pos);\n    return texel.r * 64.0;\n}\n\nvoid main () {\n  vec2 texelPos = (position.xz + texPos) / 512.0;\n\n  float vHeight = height(texelPos);\n  vec2 pos = position.xz + sectorPos;\n  vec4 outputPos = perspective * model * vec4(pos.x, vHeight, pos.y, 1.0);\n  vcoord = coord.xy;\n  gl_Position = outputPos;\n  dist = outputPos.z;\n\n  hmapPos = texelPos;\n}\n\n'};
 var _lepoetemaudit$elm_terrain$Terrain$textureNames = {
 	ctor: '::',
-	_0: 'colourmap.png',
+	_0: 'colourmap.jpg',
 	_1: {
 		ctor: '::',
-		_0: 'detail.png',
+		_0: 'detail.jpg',
 		_1: {
 			ctor: '::',
 			_0: 'heightmap.png',
@@ -12623,7 +12623,7 @@ var _lepoetemaudit$elm_terrain$Terrain$fmod = F2(
 		return (_elm_lang$core$Basics$toFloat(
 			A2(_elm_lang$core$Basics_ops['%'], integer, n)) + f) - _elm_lang$core$Basics$toFloat(integer);
 	});
-var _lepoetemaudit$elm_terrain$Terrain$sectorSize = 32;
+var _lepoetemaudit$elm_terrain$Terrain$sectorSize = 64;
 var _lepoetemaudit$elm_terrain$Terrain$getSectorPos = F2(
 	function (x, z) {
 		return {
@@ -12671,7 +12671,7 @@ var _lepoetemaudit$elm_terrain$Terrain$getSectorRow = F3(
 			cols);
 	});
 var _lepoetemaudit$elm_terrain$Terrain$getSectors = function (person) {
-	var rows = A2(_elm_lang$core$List$range, 0, 12);
+	var rows = A2(_elm_lang$core$List$range, 0, 8);
 	var _p12 = _elm_community$linear_algebra$Math_Vector3$toTuple(person.position);
 	var x = _p12._0;
 	var z = _p12._2;
@@ -13116,8 +13116,8 @@ var _lepoetemaudit$elm_terrain$Main$debugReadout = function (model) {
 			_1: {ctor: '[]'}
 		});
 };
-var _lepoetemaudit$elm_terrain$Main$far = 260.0;
-var _lepoetemaudit$elm_terrain$Main$near = 1.0;
+var _lepoetemaudit$elm_terrain$Main$far = 512.0;
+var _lepoetemaudit$elm_terrain$Main$near = 0.5;
 var _lepoetemaudit$elm_terrain$Main$fov = 45;
 var _lepoetemaudit$elm_terrain$Main$perspective = F2(
 	function (w, h) {
@@ -13165,7 +13165,7 @@ var _lepoetemaudit$elm_terrain$Main$gravity = F2(
 		return _elm_lang$core$Native_Utils.update(
 			person,
 			{
-				velocity: A3(_elm_community$linear_algebra$Math_Vector3$vec3, v.x, v.y - (0.25 * dt), v.z)
+				velocity: A3(_elm_community$linear_algebra$Math_Vector3$vec3, v.x, v.y - (2.5e-3 * dt), v.z)
 			});
 	});
 var _lepoetemaudit$elm_terrain$Main$fixRot = function (rot) {
@@ -13199,12 +13199,12 @@ var _lepoetemaudit$elm_terrain$Main$mouseLook = F4(
 				lookVert: (0 - (_elm_lang$core$Basics$pi / 2.0)) + ((_elm_lang$core$Basics$toFloat(mouseY) / _elm_lang$core$Basics$toFloat(h)) * _elm_lang$core$Basics$pi)
 			});
 	});
-var _lepoetemaudit$elm_terrain$Main$eyeLevel = 2.6;
+var _lepoetemaudit$elm_terrain$Main$eyeLevel = 1.8;
 var _lepoetemaudit$elm_terrain$Main$defaultPerson = {
-	position: A3(_elm_community$linear_algebra$Math_Vector3$vec3, 108.05, _lepoetemaudit$elm_terrain$Main$eyeLevel, 44.0),
+	position: A3(_elm_community$linear_algebra$Math_Vector3$vec3, 196.05, _lepoetemaudit$elm_terrain$Main$eyeLevel, 218.0),
 	velocity: A3(_elm_community$linear_algebra$Math_Vector3$vec3, 0.0, 0, 5.0),
-	rotation: _elm_lang$core$Basics$pi,
-	lookVert: 0.0
+	rotation: 6.18,
+	lookVert: 0.3
 };
 var _lepoetemaudit$elm_terrain$Main$physics = F3(
 	function (model, dt, person) {

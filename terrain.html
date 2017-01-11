@@ -1,0 +1,28 @@
+<head>
+    <style> * { margin: 0; padding: 0 }</style>
+</head>
+
+<body>
+<script src="elm.js"></script>
+
+<script>
+    var canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    var ctx = canvas.getContext('2d');
+    var hmap = new Image(512, 512);
+    hmap.src = 'texture/heightmap.png';
+    hmap.onload = function() {
+        ctx.drawImage(hmap, 0, 0);
+        var data = ctx.getImageData(0, 0, 512, 512).data;
+        var hmapData = [];
+
+        // Use only the red channel for now
+        for (var i=0; i < 512 * 512 * 4; i+=4) {
+            hmapData.push(data[i] / 4.0);
+        }
+
+        var app = Elm.Main.fullscreen({ terrainHeightMap: hmapData });
+    }
+    </script>
+</body>
