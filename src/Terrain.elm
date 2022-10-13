@@ -1,228 +1,340 @@
 module Terrain exposing (..)
 
 import Array exposing (Array)
-import Task
-
-import Math.Vector2 exposing (Vec2)
-import Math.Vector3 exposing (..)
-import Math.Vector3 as V3
 import Math.Matrix4 exposing (..)
-import WebGL exposing (Shader, triangles, entity, entityWith, Entity)
-import WebGL.Settings as Settings
-import WebGL.Texture as Texture exposing (..)
-import WebGL.Settings.DepthTest as DepthTest
+import Math.Vector2 exposing (Vec2)
+import Math.Vector3 as V3 exposing (..)
+import Task
 import Tuple exposing (first, second)
-
 import Types exposing (Person)
+import WebGL exposing (Entity, Shader, entity, entityWith, triangles)
+import WebGL.Settings as Settings
+import WebGL.Settings.DepthTest as DepthTest
+import WebGL.Texture as Texture exposing (..)
 
 
-type Action = TexturesLoaded (List Texture)
-type alias Model = List Texture
+type Action
+    = TexturesLoaded (List Texture)
+
+
+type alias Model =
+    List Texture
+
 
 init : Model
-init = []
+init =
+    []
+
 
 update a model =
-  case a of
-    TexturesLoaded texes ->
-      texes ! []
+    case a of
+        TexturesLoaded texes ->
+            ( texes, Cmd.none )
+
 
 sectorSize : number
-sectorSize = 64
+sectorSize =
+    64
+
 
 fmod : Float -> Int -> Float
 fmod f n =
-  let integer = floor f
-  in  toFloat (integer % n) + f - toFloat integer
+    let
+        integer =
+            floor f
+    in
+    toFloat (modBy n integer) + f - toFloat integer
 
 
 getHeight : Array Float -> ( Int, Int ) -> Float
-getHeight hmap (x, z) =
-  Array.get (x + ((512 - z) * 512)) hmap
-  |> Maybe.withDefault 5.0
+getHeight hmap ( x, z ) =
+    Array.get (x + ((512 - z) * 512)) hmap
+        |> Maybe.withDefault 5.0
 
-getTerrainHeight : (Float, Float, Float) -> Array Float -> Float
-getTerrainHeight (x, _, z) hmap =
-  let
-    (x1, z1) = (floor x, floor z)
-    (x2, z2) = (x1 + 1, z1 + 1)
-    gh = (getHeight hmap)
-    (h11, h21, h12, h22) = ( gh (x1, z1)
-                           , gh (x2, z1)
-                           , gh (x1, z2)
-                           , gh (x2, z2) )
-  in
 
-      (h11 * ((toFloat x2) - x) * ((toFloat z2) - z) +
-       h21 * (x - (toFloat x1)) * ((toFloat z2) - z) +
-       h12 * ((toFloat x2) - x) * (z - (toFloat z1)) +
-       h22 * (x - (toFloat x1)) * (z - (toFloat z1))
-      )
+getTerrainHeight : ( Float, Float, Float ) -> Array Float -> Float
+getTerrainHeight ( x, _, z ) hmap =
+    let
+        ( x1, z1 ) =
+            ( floor x, floor z )
+
+        ( x2, z2 ) =
+            ( x1 + 1, z1 + 1 )
+
+        gh =
+            getHeight hmap
+
+        ( h11, h21 ) =
+            ( gh ( x1, z1 )
+            , gh ( x2, z1 )
+            )
+
+        ( h12, h22 ) =
+            ( gh ( x1, z2 )
+            , gh ( x2, z2 )
+            )
+    in
+    h11
+        * (toFloat x2 - x)
+        * (toFloat z2 - z)
+        + h21
+        * (x - toFloat x1)
+        * (toFloat z2 - z)
+        + h12
+        * (toFloat x2 - x)
+        * (z - toFloat z1)
+        + h22
+        * (x - toFloat x1)
+        * (z - toFloat z1)
 
 
 type alias Sector =
-  { texturePos : (Float, Float)
-  , position : (Float, Float)
-  }
+    { texturePos : ( Float, Float )
+    , position : ( Float, Float )
+    }
+
 
 getSectorPos : Float -> Float -> ( Float, Float )
 getSectorPos x z =
-  (x - (fmod x sectorSize), z - (fmod z sectorSize))
+    ( x - fmod x sectorSize, z - fmod z sectorSize )
+
 
 makeSector : Int -> Person -> Float -> Int -> Maybe Sector
 makeSector rowNum person fov colNum =
-  let
-    (pX, _, pZ) = toTuple person.position
-    length = (toFloat rowNum) * sectorSize
-    -- TODO - this trig stinks. Fix it.
-    rot = person.rotation - (pi / 2.0) - fov
+    let
+        { x, z } =
+            V3.toRecord person.position
 
-    cross = rot + (fov * 3.0)
+        length =
+            toFloat rowNum * sectorSize
 
-    sX = (cos rot) * length
-    sZ = (sin rot) * length
+        -- TODO - this trig stinks. Fix it.
+        rot =
+            person.rotation - (pi / 2.0) - fov
 
-    x = sX + ((cos cross) * sectorSize * (toFloat colNum))
-    z = sZ + ((sin cross) * sectorSize * (toFloat colNum))
+        cross =
+            rot + (fov * 3.0)
 
-    texturePos = getSectorPos (x + pX) (z + pZ)
-    userSector = getSectorPos pX pZ
-    sectorPos = (first texturePos - first userSector, second texturePos - second userSector)
+        sX =
+            cos rot * length
 
-    (tx, ty) = texturePos
+        sZ =
+            sin rot * length
 
-  in
+        pX =
+            sX + (cos cross * sectorSize * toFloat colNum)
+
+        pZ =
+            sZ + (sin cross * sectorSize * toFloat colNum)
+
+        texturePos =
+            getSectorPos (x + pX) (z + pZ)
+
+        userSector =
+            getSectorPos x z
+
+        sectorPos =
+            ( first texturePos - first userSector, second texturePos - second userSector )
+
+        ( tx, ty ) =
+            texturePos
+    in
     if tx >= -1.0 && ty >= -1.0 && tx <= 512 && ty <= 512 then
-      Just { texturePos = texturePos
-       , position = sectorPos
-      }
-    else
-      Nothing
+        Just
+            { texturePos = texturePos
+            , position = sectorPos
+            }
 
+    else
+        Nothing
 
 
 getSectorRow : Int -> Person -> Float -> List Sector
 getSectorRow rowNum person fov =
-  let
-      length = (toFloat rowNum) * sectorSize
-      width = (cos fov) * length
-      cols = List.range -1 <| ((width / sectorSize) * 2.1 |> round)+1
-  in
-      List.filterMap (makeSector rowNum person fov) cols
+    let
+        length =
+            toFloat rowNum * sectorSize
+
+        width =
+            cos fov * length
+
+        cols =
+            List.range -1 <| ((width / sectorSize) * 2.1 |> round) + 1
+    in
+    List.filterMap (makeSector rowNum person fov) cols
 
 
 getSectors : Person -> List Sector
 getSectors person =
-  let
-    (x, _, z) = toTuple person.position
-    -- Get initial sector position
-    (sx, sy) = (x - (fmod x sectorSize), z - (fmod z sectorSize))
-    rows = List.range 0 8
-  in
+    let
+        { x, z } =
+            V3.toRecord person.position
+
+        -- Get initial sector position
+        ( sx, sy ) =
+            ( x - fmod x sectorSize, z - fmod z sectorSize )
+
+        rows =
+            List.range 0 8
+    in
     List.concatMap (\r -> getSectorRow r person (degrees 45.0)) rows
+
 
 view : Mat4 -> Person -> Model -> List Entity
 view perspective camera model =
-  case model of
-    [base, detail, hmap] ->
-      List.map
-        (\sector ->
-          (entityWith
-                  [ Settings.cullFace Settings.back
-                  , DepthTest.less { write = True
-                                   , near = 0
-                                   , far = 1
-                  }]
-                  vertexShader
-                  fragmentShader
-                  sectorBlock  { base=base
-                               , detail=detail
-                               , heightmap=hmap
-                               , texPos=Math.Vector2.vec2 (first sector.texturePos) (second sector.texturePos)
-                               , sectorPos=Math.Vector2.vec2 (first sector.position) (second sector.position)
-                               , perspective=perspective
-                               , model=modelMatrix camera}))
-        (getSectors camera)
+    case model of
+        [ base, detail, hmap ] ->
+            List.map
+                (\sector ->
+                    entityWith
+                        [ Settings.cullFace Settings.back
+                        , DepthTest.less
+                            { write = True
+                            , near = 0
+                            , far = 1
+                            }
+                        ]
+                        vertexShader
+                        fragmentShader
+                        sectorBlock
+                        { base = base
+                        , detail = detail
+                        , heightmap = hmap
+                        , texPos = Math.Vector2.vec2 (first sector.texturePos) (second sector.texturePos)
+                        , sectorPos = Math.Vector2.vec2 (first sector.position) (second sector.position)
+                        , perspective = perspective
+                        , model = modelMatrix camera
+                        }
+                )
+                (getSectors camera)
 
-    _ -> []
+        _ ->
+            []
 
 
 getTexPos : { a | position : Vec3 } -> Vec2
 getTexPos person =
-  let
-    (x, _, z) = toTuple person.position
-  in
-    Math.Vector2.vec2 ((toFloat (floor x)) + 0.0)
-                      ((toFloat (floor z)) + 0.0)
+    let
+        { x, z } =
+            V3.toRecord person.position
+    in
+    Math.Vector2.vec2 (toFloat (floor x) + 0.0)
+        (toFloat (floor z) + 0.0)
+
+
 
 -- VIEW
 
+
 modelMatrix : Person -> Mat4
 modelMatrix person =
-  let
-    (x, y, z) = Math.Vector3.negate person.position |> toTuple
-    camera = vec3 ((fmod x sectorSize) - sectorSize) y ((fmod z sectorSize) - sectorSize)
-  in
+    let
+        { x, y, z } =
+            V3.negate person.position |> V3.toRecord
+
+        camera =
+            vec3 (fmod x sectorSize - sectorSize) y (fmod z sectorSize - sectorSize)
+    in
     makeTranslate camera
-    |> mul (makeRotate person.rotation (vec3 0 1 0.0))
-    |> mul (makeRotate person.lookVert (vec3 1 0 0.0))
+        |> mul (makeRotate person.rotation (vec3 0 1 0.0))
+        |> mul (makeRotate person.lookVert (vec3 1 0 0.0))
+
 
 
 -- Define the mesh for a terrain slice
+
 
 type alias Vertex =
     { position : Vec3
     , coord : Vec3
     }
 
-makeTile : Int -> Int -> List (Vertex, Vertex, Vertex)
-makeTile sectorSize pos =
-  let
-    x = (pos % sectorSize  |> toFloat)
-    y = (pos // sectorSize |> toFloat)
-    topLeft     = Vertex (vec3 x     0 (y+1)) (vec3 0 1 0)
-    topRight    = Vertex (vec3 (x+1) 0 (y+1)) (vec3 1 1 0)
-    bottomLeft  = Vertex (vec3 x     0  y)    (vec3 0 0 0)
-    bottomRight = Vertex (vec3 (x+1) 0  y)    (vec3 1 0 0)
-  in
-    [ (topLeft,topRight,bottomLeft)
-    , (bottomLeft,topRight,bottomRight)
+
+makeTile : Int -> List ( Vertex, Vertex, Vertex )
+makeTile pos =
+    let
+        x =
+            modBy sectorSize pos |> toFloat
+
+        y =
+            pos // sectorSize |> toFloat
+
+        topLeft =
+            Vertex (vec3 x 0 (y + 1)) (vec3 0 1 0)
+
+        topRight =
+            Vertex (vec3 (x + 1) 0 (y + 1)) (vec3 1 1 0)
+
+        bottomLeft =
+            Vertex (vec3 x 0 y) (vec3 0 0 0)
+
+        bottomRight =
+            Vertex (vec3 (x + 1) 0 y) (vec3 1 0 0)
+    in
+    [ ( topLeft, topRight, bottomLeft )
+    , ( bottomLeft, topRight, bottomRight )
     ]
 
+
 sectorBlock : WebGL.Mesh Vertex
-sectorBlock = triangles (List.concatMap (makeTile sectorSize) 
-              <| List.range 0 
-              <| (sectorSize*sectorSize)-1)
+sectorBlock =
+    triangles
+        (List.concatMap makeTile <|
+            List.range 0 <|
+                (sectorSize * sectorSize)
+                    - 1
+        )
+
+
 
 -- Required external resources
 
+
 textureNames : List String
-textureNames = ["colourmap.jpg", "detail.jpg", "heightmap.png"]
+textureNames =
+    [ "colourmap.jpg", "detail.jpg", "heightmap.png" ]
+
 
 loadTextures : Task.Task Error Action
 loadTextures =
-  List.map
-    (\t -> Texture.loadWith 
-              { defaultOptions
-                | magnify = linear
-                , minify = linearMipmapNearest 
-                , horizontalWrap = clampToEdge
-                , verticalWrap = clampToEdge} <| "texture/" ++ t)
-    textureNames
-  |> Task.sequence
-  |> Task.map TexturesLoaded
-  |> Debug.log "texture loading: "
-  
+    List.map
+        (\t ->
+            Texture.loadWith
+                { defaultOptions
+                    | magnify = linear
+                    , minify = linearMipmapNearest
+                    , horizontalWrap = clampToEdge
+                    , verticalWrap = clampToEdge
+                }
+            <|
+                "texture/"
+                    ++ t
+        )
+        textureNames
+        |> Task.sequence
+        |> Task.map TexturesLoaded
+        |> Debug.log "texture loading: "
+
+
+
 -- Shaders
-vertexShader : Shader { position:Vec3, coord:Vec3 }
-                      { u | perspective:Mat4
-                      , model:Mat4
-                      , heightmap:Texture                      
-                      , texPos:Vec2
-                      , sectorPos: Vec2 }
-                      { vcoord:Vec2, dist: Float                   
-                      , hmapPos:Vec2 }
-vertexShader = [glsl|
+
+
+vertexShader :
+    Shader { position : Vec3, coord : Vec3 }
+        { u
+            | perspective : Mat4
+            , model : Mat4
+            , heightmap : Texture
+            , texPos : Vec2
+            , sectorPos : Vec2
+        }
+        { vcoord : Vec2
+        , dist : Float
+        , hmapPos : Vec2
+        }
+vertexShader =
+    [glsl|
 
 precision mediump float;
 
@@ -258,9 +370,10 @@ void main () {
 
 |]
 
-fragmentShader : Shader {} { u | base: Texture, detail : Texture, heightmap : Texture} 
-                           { vcoord:Vec2, hmapPos: Vec2, dist: Float }
-fragmentShader = [glsl|
+
+fragmentShader : Shader {} { u | base : Texture, detail : Texture, heightmap : Texture } { vcoord : Vec2, hmapPos : Vec2, dist : Float }
+fragmentShader =
+    [glsl|
 
 precision mediump float;
 uniform sampler2D base;

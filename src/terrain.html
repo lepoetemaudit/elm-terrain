@@ -22,7 +22,7 @@
             hmapData.push(data[i] / 4.0);
         }
 
-        var app = Elm.Main.fullscreen({ terrainHeightMap: hmapData });
+        var app = Elm.Main.init({ flags: {terrainHeightMap: hmapData} });
     }
     </script>
 </body>
